@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preview: {{ file_name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .preview-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        .file-info-card {
+            border: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+        .preview-table-container {
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+        }
+        .table th {
+            background-color: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .download-section {
+            background-color: #f8f9fa;
+            padding: 2rem;
+            border-radius: 0.375rem;
+            margin-top: 2rem;
+        }
+        .btn-download {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            padding: 0.75rem 2rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .btn-download:hover {
+            background: linear-gradient(135deg, #218838 0%, #1abc9c 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="preview-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1><i class="fas fa-file-alt me-3"></i>File Preview</h1>
+                    <p class="mb-0 fs-5">{{ file_name }}</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <span class="badge bg-light text-dark fs-6">{{ file_type }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- File Information Card -->
+        <div class="card file-info-card">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <i class="fas fa-database fa-3x text-primary mb-2"></i>
+                            <h5>Total Records</h5>
+                            <h3 class="text-primary">{{ "{:,}".format(total_records) }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <i class="fas fa-eye fa-3x text-info mb-2"></i>
+                            <h5>Preview Showing</h5>
+                            <h3 class="text-info">{{ preview_records }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <i class="fas fa-columns fa-3x text-success mb-2"></i>
+                            <h5>Columns</h5>
+                            <h3 class="text-success">{{ columns|length }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <i class="fas fa-file-download fa-3x text-warning mb-2"></i>
+                            <h5>File Type</h5>
+                            <h3 class="text-warning">{{ file_type }}</h3>
+                        </div>
+                    </div>
+                </div>
+
+                {% if summary %}
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <h5>File Summary</h5>
+                        <div class="row">
+                            {% if summary.geometry_type %}
+                            <div class="col-md-4">
+                                <strong>Geometry Type:</strong> {{ summary.geometry_type }}
+                            </div>
+                            {% endif %}
+                            {% if summary.crs %}
+                            <div class="col-md-4">
+                                <strong>Coordinate System:</strong> {{ summary.crs }}
+                            </div>
+                            {% endif %}
+                            {% if summary.bounds %}
+                            <div class="col-md-4">
+                                <strong>Spatial Bounds:</strong> Available
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Column Information -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-list me-2"></i>Available Columns</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for column in columns %}
+                    <div class="col-md-3 mb-2">
+                        <span class="badge bg-secondary">{{ column }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Preview Table -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-table me-2"></i>Data Preview
+                    <small class="text-muted">(First {{ preview_records }} of {{ "{:,}".format(total_records) }} records)</small>
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="preview-table-container">
+                    {{ table_html|safe }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Download Section -->
+        <div class="download-section text-center">
+            <h4 class="mb-3">Ready to Download?</h4>
+            <p class="text-muted mb-4">
+                This file contains {{ "{:,}".format(total_records) }} parcel records.
+                {% if file_type == 'GeoPackage' %}
+                The GeoPackage format includes spatial data and can be opened in GIS software like QGIS or ArcGIS.
+                {% else %}
+                The CSV format can be opened in Excel, Google Sheets, or any spreadsheet application.
+                {% endif %}
+            </p>
+
+            <div class="d-flex justify-content-center gap-3">
+                <a href="{{ url_for('parcel_search') }}" class="btn btn-outline-secondary btn-lg">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Search
+                </a>
+                <a href="{{ download_url }}" class="btn btn-download btn-lg">
+                    <i class="fas fa-download me-2"></i>Download {{ file_type }}
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Add some interactivity
+        document.addEventListener('DOMContentLoaded', function() {
+            // Make table rows clickable/hoverable
+            const tableRows = document.querySelectorAll('#parcel-preview-table tbody tr');
+            tableRows.forEach(row => {
+                row.addEventListener('click', function() {
+                    // Could add row selection or details modal here
+                    this.classList.toggle('table-active');
+                });
+            });
+
+            // Add search functionality to table
+            const table = document.getElementById('parcel-preview-table');
+            if (table) {
+                // Add a search input above the table
+                const searchContainer = document.createElement('div');
+                searchContainer.className = 'mb-3 p-3 bg-light';
+                searchContainer.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <input type="text" id="table-search" class="form-control" placeholder="Search in preview data...">
+                        </div>
+                        <div class="col-md-6">
+                            <small class="text-muted">Search within the preview data shown below</small>
+                        </div>
+                    </div>
+                `;
+                table.parentNode.insertBefore(searchContainer, table);
+
+                // Add search functionality
+                document.getElementById('table-search').addEventListener('input', function() {
+                    const searchTerm = this.value.toLowerCase();
+                    const rows = table.querySelectorAll('tbody tr');
+
+                    rows.forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        if (text.includes(searchTerm)) {
+                            row.style.display = '';
+                        } else {
+                            row.style.display = 'none';
+                        }
+                    });
+                });
+            }
+        });
+    </script>
+</body>
+</html>

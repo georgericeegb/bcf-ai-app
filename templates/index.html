@@ -1,10 +1,2536 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Renewable Energy Project Analyzer</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .analysis-section { margin: 20px 0; }
+        .variable-card { margin: 10px 0; }
+        .loading { display: none; }
+        .results { margin-top: 20px; }
+
+        /* Enhanced Workflow CSS */
+        .workflow-step {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .btn-option {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 16px;
+        }
+
+        .btn-option:hover {
+            border-color: #0d6efd;
+            background: #f8f9fa;
+        }
+
+        .btn-option.selected {
+            border-color: #0d6efd;
+            background: #0d6efd;
+            color: white;
+        }
+
+        .tier-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .tier-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .tier-card:hover {
+            border-color: #0d6efd;
+        }
+
+        .tier-card.selected {
+            border-color: #0d6efd;
+            background: #f8f9fa;
+        }
+
+        .criteria-selection {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .criteria-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .criteria-card:hover {
+            border-color: #198754;
+        }
+
+        .criteria-card.selected {
+            border-color: #198754;
+            background: #f8fff8;
+        }
+
+        .selection-indicator {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .criteria-card.selected .selection-indicator {
+            background: #198754;
+            color: white;
+        }
+
+        .step-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+
+        .criteria-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .criteria-tag {
+            background: #0d6efd;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 14px;
+        }
+
+        /* County loading styles */
+        #county-loading {
+            display: flex;
+            align-items: center;
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .form-select:disabled,
+        .form-control:disabled {
+            background-color: #f8f9fa;
+            border-color: #dee2e6;
+            opacity: 0.65;
+        }
+
+        /* Location selection improvements */
+        .location-selection .mb-3 {
+            position: relative;
+        }
+
+        .location-selection .form-select,
+        .location-selection .form-control {
+            transition: all 0.3s ease;
+        }
+
+        .location-selection .form-select:focus,
+        .location-selection .form-control:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        }
+
+        /* File Download/Preview Styling */
+        .file-actions {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+
+        .file-actions .btn {
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .file-actions .btn i {
+            font-size: 1.2em;
+        }
+
+        .file-actions .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .file-type-label {
+            font-size: 0.875rem;
+            color: #6c757d;
+            margin-bottom: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-group .dropdown-menu {
+            min-width: 200px;
+        }
+
+        .btn-group .dropdown-menu .dropdown-item {
+            padding: 10px 16px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-group .dropdown-menu .dropdown-item:hover {
+            background-color: #f8f9fa;
+            transform: translateX(4px);
+        }
+
+        /* Analysis Results Container */
+        .suitability-results-container {
+            margin-top: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Summary Statistics */
+        .suitability-summary h3 {
+            margin: 0 0 20px 0;
+            color: #2c3e50;
+            font-size: 24px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            border-left: 4px solid #3498db;
+        }
+
+        .stat-value {
+            display: block;
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            display: block;
+            font-size: 14px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Button Styles */
+        .analyze-suitability-btn {
+            background: linear-gradient(135deg, #27ae60, #2ecc71) !important;
+            color: white !important;
+            border: none !important;
+            padding: 12px 24px !important;
+            border-radius: 6px !important;
+            font-weight: 600 !important;
+            cursor: pointer !important;
+            transition: all 0.3s ease !important;
+            font-size: 16px !important;
+            width: 100% !important;
+        }
+
+        .analyze-suitability-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #219a52, #27ae60) !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 8px rgba(39, 174, 96, 0.3) !important;
+        }
+
+        .analyze-suitability-btn:disabled {
+            background: #bdc3c7 !important;
+            cursor: not-allowed !important;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Progress Indicator */
+        .analysis-progress {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            z-index: 1000;
+        }
+
+        .analysis-progress::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: -1;
+        }
+
+        .progress-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .analysis-progress p {
+            margin: 0;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        /* Notification Styles */
+        .notification {
+            animation: slideInRight 0.3s ease-out;
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .tier-options {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .step-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .location-selection {
+                padding: 0 10px;
+            }
+
+            .criteria-tags {
+                justify-content: center;
+            }
+
+            .file-actions .row > div {
+                margin-bottom: 10px;
+            }
+
+            .file-actions .btn {
+                min-height: 45px;
+                font-size: 0.9em;
+            }
+
+            .suitability-results-container {
+                margin: 20px 10px;
+                padding: 15px;
+            }
+
+            .summary-stats {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+
+            .stat-value {
+                font-size: 24px;
+            }
+        }
+
+        /* Print Styles */
+        @media print {
+            .analysis-progress,
+            .notification {
+                display: none !important;
+            }
+        }
+
+        /* Suitability Results Styling */
+        .suitability-results-container {
+            margin-top: 30px;
+            animation: slideInUp 0.5s ease-out;
+        }
+
+        @keyframes slideInUp {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        /* Summary Statistics Enhanced */
+        .suitability-summary {
+            margin-bottom: 30px;
+        }
+
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .stat-item {
+            background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #0d6efd;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .stat-value {
+            display: block;
+            font-size: 32px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-label {
+            display: block;
+            font-size: 13px;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+        }
+
+        /* Table Enhancements */
+        #suitability-table {
+            font-size: 0.9rem;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #suitability-table thead th {
+            background: linear-gradient(135deg, #343a40 0%, #495057 100%);
+            color: white;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.8rem;
+            padding: 15px 10px;
+            border: none;
+        }
+
+        #suitability-table tbody tr {
+            transition: all 0.2s ease;
+        }
+
+        #suitability-table tbody tr:hover {
+            transform: scale(1.01);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .table-success {
+            background-color: rgba(25, 135, 84, 0.1) !important;
+            border-left: 4px solid #198754;
+        }
+
+        .table-warning {
+            background-color: rgba(255, 193, 7, 0.1) !important;
+            border-left: 4px solid #ffc107;
+        }
+
+        /* Badge Styling */
+        .badge {
+            font-size: 0.8rem;
+            padding: 6px 10px;
+            border-radius: 15px;
+            font-weight: 600;
+        }
+
+        /* Filter Controls */
+        .form-range {
+            background: linear-gradient(to right, #e9ecef 0%, #0d6efd 0%);
+        }
+
+        .form-range::-webkit-slider-thumb {
+            background: #0d6efd;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .form-range::-moz-range-thumb {
+            background: #0d6efd;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Progress Indicator Enhanced */
+        .analysis-progress {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            z-index: 1000;
+            min-width: 300px;
+        }
+
+        .analysis-progress::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: -1;
+            backdrop-filter: blur(2px);
+        }
+
+        .progress-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #0d6efd;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .analysis-progress p {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        .analysis-progress small {
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        /* Modal Enhancements */
+        .modal-dialog {
+            max-width: 800px;
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%);
+            color: white;
+            border-radius: 0.375rem 0.375rem 0 0;
+        }
+
+        .modal-title {
+            font-weight: 600;
+        }
+
+        .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+
+        /* Button Improvements */
+        .btn {
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-sm {
+            font-size: 0.8rem;
+            padding: 0.4rem 0.8rem;
+        }
+
+        /* Alert Enhancements */
+        .alert {
+            border-radius: 10px;
+            border: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .alert-success {
+            background: linear-gradient(135deg, #d1edff 0%, #e8f7e8 100%);
+            color: #0f5132;
+            border-left: 4px solid #198754;
+        }
+
+        .alert-danger {
+            background: linear-gradient(135deg, #f8d7da 0%, #ffeaa7 100%);
+            color: #842029;
+            border-left: 4px solid #dc3545;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .summary-stats {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+
+            .stat-value {
+                font-size: 24px;
+            }
+
+            #suitability-table {
+                font-size: 0.8rem;
+            }
+
+            #suitability-table th,
+            #suitability-table td {
+                padding: 8px 5px;
+            }
+
+            .analysis-progress {
+                padding: 30px 20px;
+                min-width: 280px;
+            }
+
+            .modal-dialog {
+                margin: 10px;
+                max-width: none;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .summary-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-item {
+                padding: 15px;
+            }
+
+            .table-responsive {
+                border-radius: 8px;
+            }
+
+            #suitability-table th:nth-child(n+6),
+            #suitability-table td:nth-child(n+6) {
+                display: none;
+            }
+        }
+
+        /* Loading States */
+        .btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Accessibility Improvements */
+        .badge:focus,
+        .btn:focus,
+        .form-select:focus,
+        .form-range:focus {
+            outline: 2px solid #0d6efd;
+            outline-offset: 2px;
+        }
+
+        /* Print Styles */
+        @media print {
+            .analysis-progress,
+            .btn,
+            .modal {
+                display: none !important;
+            }
+
+            .table {
+                font-size: 10px;
+            }
+
+            .stat-item {
+                break-inside: avoid;
+            }
+        }
+    </style>
 </head>
 <body>
-$END$
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">🌱 Renewable Energy Project Analyzer</h1>
+
+        <!-- Enhanced Workflow Container -->
+        <div id="workflow-container">
+            <!-- Dynamic content will be injected here -->
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-3">Initializing analysis workflow...</p>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loading" class="text-center loading">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>AI is analyzing your project...</p>
+        </div>
+
+        <!-- Variable Recommendations -->
+        <div id="recommendationsSection" class="card analysis-section" style="display: none;">
+            <div class="card-header">
+                <h3>Recommended Critical Variables</h3>
+            </div>
+            <div class="card-body">
+                <div id="variablesList"></div>
+                <div class="mt-3">
+                    <button class="btn btn-success" onclick="runComprehensiveAnalysis()">
+                        Run Comprehensive Analysis
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Results -->
+        <div id="analysisResults" class="card analysis-section" style="display: none;">
+            <div class="card-header">
+                <h3>Analysis Results</h3>
+            </div>
+            <div class="card-body">
+                <div id="analysisContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
+<script>
+// COMPLETE OPTIMIZED WORKFLOW WITH PREVIEW/DOWNLOAD FUNCTIONALITY
+
+let currentVariables = {};
+let projectConfig = {};
+
+class ProjectWorkflow {
+    constructor() {
+        this.selectedProjectType = null;
+        this.selectedTier = null;
+        this.selectedCriteria = [];
+        this.selectedLocation = null;
+        this.tierInfo = null;
+        this.currentAnalysis = null;
+        this.currentParcelResults = null;
+    }
+
+    async initialize() {
+        try {
+            const response = await fetch('/api/tier-info');
+            const data = await response.json();
+            if (data.success) {
+                this.tierInfo = data.tier_info;
+                this.renderStep1();
+            }
+        } catch (error) {
+            console.error('Failed to load tier info:', error);
+            document.getElementById('workflow-container').innerHTML =
+                '<div class="alert alert-danger">Failed to load. Please refresh.</div>';
+        }
+    }
+
+    renderStep1() {
+        const container = document.getElementById('workflow-container');
+        container.innerHTML = `
+            <div class="card analysis-section">
+                <div class="card-header"><h3>Step 1: Project Configuration</h3></div>
+                <div class="card-body workflow-step">
+                    <div class="mb-3">
+                        <label><strong>Project Type:</strong></label>
+                        <div class="button-group">
+                            <button class="btn-option ${this.selectedProjectType === 'solar' ? 'selected' : ''}"
+                                    onclick="workflow.selectProjectType('solar')">
+                                ☀️ Solar Project
+                            </button>
+                            <button class="btn-option ${this.selectedProjectType === 'wind' ? 'selected' : ''}"
+                                    onclick="workflow.selectProjectType('wind')">
+                                💨 Wind Project
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label><strong>Analysis Tier:</strong></label>
+                        <div class="tier-options">
+                            ${Object.entries(this.tierInfo).map(([tier, info]) => `
+                                <div class="tier-card ${this.selectedTier === tier ? 'selected' : ''}"
+                                     onclick="workflow.selectTier('${tier}')">
+                                    <h5>${tier.charAt(0).toUpperCase() + tier.slice(1)} Level</h5>
+                                    <small>${info.description}</small>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary"
+                            onclick="workflow.proceedToStep2()"
+                            ${!this.selectedProjectType || !this.selectedTier ? 'disabled' : ''}>
+                        Proceed to Criteria Selection
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    selectProjectType(type) {
+        this.selectedProjectType = type;
+        this.renderStep1();
+    }
+
+    selectTier(tier) {
+        this.selectedTier = tier;
+        this.renderStep1();
+    }
+
+    proceedToStep2() {
+        if (!this.selectedProjectType || !this.selectedTier) return;
+        this.renderStep2();
+    }
+
+    renderStep2() {
+        const tierInfo = this.tierInfo[this.selectedTier];
+        const container = document.getElementById('workflow-container');
+
+        container.innerHTML = `
+            <div class="card analysis-section">
+                <div class="card-header"><h3>Step 2: Select Analysis Focus Areas</h3></div>
+                <div class="card-body workflow-step">
+                    <p>Choose criteria for your ${this.selectedProjectType} project analysis:</p>
+
+                    <div class="criteria-selection">
+                        ${tierInfo.criteria.map((criteria, index) => `
+                            <div class="criteria-card ${this.selectedCriteria.includes(index) ? 'selected' : ''}"
+                                 onclick="workflow.toggleCriteria(${index})">
+                                <div>
+                                    <h6>${criteria.split(' - ')[0]}</h6>
+                                    <small>${criteria.split(' - ')[1] || ''}</small>
+                                </div>
+                                <div class="selection-indicator">
+                                    ${this.selectedCriteria.includes(index) ? '✓' : '+'}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="step-actions">
+                        <button class="btn btn-secondary" onclick="workflow.renderStep1()">← Back</button>
+                        <button class="btn btn-primary"
+                                onclick="workflow.proceedToStep3()"
+                                ${this.selectedCriteria.length === 0 ? 'disabled' : ''}>
+                            Continue (${this.selectedCriteria.length} selected)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    toggleCriteria(index) {
+        if (this.selectedCriteria.includes(index)) {
+            this.selectedCriteria = this.selectedCriteria.filter(i => i !== index);
+        } else {
+            this.selectedCriteria.push(index);
+        }
+        this.renderStep2();
+    }
+
+    proceedToStep3() {
+        if (this.selectedCriteria.length === 0) return;
+        this.renderStep3();
+    }
+
+    renderStep3() {
+        const container = document.getElementById('workflow-container');
+        let locationHTML = '';
+
+        if (this.selectedTier === 'state') {
+            locationHTML = `
+                <div class="mb-3">
+                    <label for="state-select" class="form-label">Select State:</label>
+                    <select id="state-select" class="form-select" onchange="workflow.selectLocation()">
+                        <option value="">Choose a state...</option>
+                        ${this.getStateOptions()}
+                    </select>
+                </div>
+            `;
+        } else if (this.selectedTier === 'county') {
+            locationHTML = `
+                <div class="mb-3">
+                    <label for="state-select" class="form-label">1. Select State:</label>
+                    <select id="state-select" class="form-select" onchange="workflow.loadCountiesForState()">
+                        <option value="">Choose a state...</option>
+                        ${this.getStateOptions()}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="county-select" class="form-label">2. Select County:</label>
+                    <select id="county-select" class="form-select" onchange="workflow.selectLocation()" disabled>
+                        <option value="">First select a state...</option>
+                    </select>
+                    <div id="county-loading" class="mt-2" style="display: none;">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading counties...</span>
+                        </div>
+                        <small class="text-muted ms-2">Loading counties...</small>
+                    </div>
+                </div>
+            `;
+        } else {
+            locationHTML = `
+                <div class="mb-3">
+                    <label for="state-select" class="form-label">1. Select State:</label>
+                    <select id="state-select" class="form-select" onchange="workflow.loadCountiesForState()">
+                        <option value="">Choose a state...</option>
+                        ${this.getStateOptions()}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="county-select" class="form-label">2. Select County:</label>
+                    <select id="county-select" class="form-select" onchange="workflow.enableCityInput()" disabled>
+                        <option value="">First select a state...</option>
+                    </select>
+                    <div id="county-loading" class="mt-2" style="display: none;">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading counties...</span>
+                        </div>
+                        <small class="text-muted ms-2">Loading counties...</small>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="city-input" class="form-label">3. Enter City or Address:</label>
+                    <input type="text" id="city-input" class="form-control"
+                           placeholder="Enter city, town, or specific address..."
+                           onchange="workflow.selectLocation()" disabled>
+                    <small class="text-muted">Be as specific as possible for local analysis</small>
+                </div>
+            `;
+        }
+
+        container.innerHTML = `
+            <div class="card analysis-section">
+                <div class="card-header">
+                    <h3>Step 3: Select Location</h3>
+                    <small class="text-muted">
+                        ${this.selectedTier === 'state' ? 'Choose the state for market analysis' :
+                          this.selectedTier === 'county' ? 'Choose the specific county for site identification' :
+                          'Choose the specific location for project development'}
+                    </small>
+                </div>
+                <div class="card-body workflow-step location-selection">
+                    <p><strong>Analysis Level:</strong> ${this.selectedTier.charAt(0).toUpperCase() + this.selectedTier.slice(1)} Level</p>
+
+                    ${locationHTML}
+
+                    <div class="mb-3">
+                        <strong>Selected Focus Areas:</strong>
+                        <div class="criteria-tags mt-2">
+                            ${this.selectedCriteria.map(index => {
+                                const criteria = this.tierInfo[this.selectedTier].criteria[index];
+                                return `<span class="criteria-tag">${criteria.split(' - ')[0]}</span>`;
+                            }).join('')}
+                        </div>
+                    </div>
+
+                    <div class="step-actions">
+                        <button class="btn btn-secondary" onclick="workflow.renderStep2()">← Back</button>
+                        <button class="btn btn-success"
+                                onclick="workflow.generateAnalysis()"
+                                ${!this.selectedLocation ? 'disabled' : ''}>
+                            Generate AI Analysis
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    getStateOptions() {
+        const states = [
+            'Arizona', 'California', 'Colorado', 'Florida', 'Illinois',
+            'Iowa', 'Kansas', 'Nevada', 'New Mexico', 'New York',
+            'Ohio', 'Pennsylvania', 'Texas', 'Utah', 'Wyoming'
+        ];
+        return states.map(state => `<option value="${state}">${state}</option>`).join('');
+    }
+
+    async loadCountiesForState() {
+        const stateSelect = document.getElementById('state-select');
+        const countySelect = document.getElementById('county-select');
+        const cityInput = document.getElementById('city-input');
+        const loadingDiv = document.getElementById('county-loading');
+
+        const selectedState = stateSelect.value;
+
+        if (!selectedState) {
+            countySelect.innerHTML = '<option value="">First select a state...</option>';
+            countySelect.disabled = true;
+            if (cityInput) {
+                cityInput.disabled = true;
+                cityInput.value = '';
+            }
+            this.selectedLocation = null;
+            this.updateButtonState();
+            return;
+        }
+
+        loadingDiv.style.display = 'block';
+        countySelect.disabled = true;
+        countySelect.innerHTML = '<option value="">Loading counties...</option>';
+
+        try {
+            const response = await fetch(`/api/counties/${selectedState}`);
+            const data = await response.json();
+
+            if (data.success && data.counties.length > 0) {
+                countySelect.innerHTML = `
+                    <option value="">Choose a county...</option>
+                    ${data.counties.map(county => `<option value="${county}">${county}</option>`).join('')}
+                `;
+                countySelect.disabled = false;
+            } else {
+                countySelect.innerHTML = '<option value="">No counties available</option>';
+            }
+        } catch (error) {
+            console.error('Error loading counties:', error);
+            countySelect.innerHTML = '<option value="">Error loading counties</option>';
+        } finally {
+            loadingDiv.style.display = 'none';
+        }
+
+        this.selectedLocation = null;
+        this.updateButtonState();
+    }
+
+    enableCityInput() {
+        const stateSelect = document.getElementById('state-select');
+        const countySelect = document.getElementById('county-select');
+        const cityInput = document.getElementById('city-input');
+
+        if (stateSelect.value && countySelect.value) {
+            cityInput.disabled = false;
+            cityInput.focus();
+        } else {
+            cityInput.disabled = true;
+            cityInput.value = '';
+        }
+
+        if (this.selectedTier === 'county') {
+            this.selectLocation();
+        }
+    }
+
+    selectLocation() {
+        const stateSelect = document.getElementById('state-select');
+        const countySelect = document.getElementById('county-select');
+        const cityInput = document.getElementById('city-input');
+
+        const state = stateSelect ? stateSelect.value : '';
+        const county = countySelect ? countySelect.value : '';
+        const city = cityInput ? cityInput.value.trim() : '';
+
+        if (this.selectedTier === 'state') {
+            this.selectedLocation = state || null;
+        } else if (this.selectedTier === 'county') {
+            this.selectedLocation = (state && county) ? `${county}, ${state}` : null;
+        } else {
+            this.selectedLocation = (state && county && city) ? `${city}, ${county}, ${state}` : null;
+        }
+
+        this.updateButtonState();
+        console.log('Selected location:', this.selectedLocation);
+    }
+
+    updateButtonState() {
+        const generateButton = document.querySelector('button[onclick="workflow.generateAnalysis()"]');
+        if (generateButton) {
+            if (this.selectedLocation) {
+                generateButton.disabled = false;
+                generateButton.classList.remove('disabled');
+            } else {
+                generateButton.disabled = true;
+                generateButton.classList.add('disabled');
+            }
+        }
+    }
+
+    async generateAnalysis() {
+        if (!this.selectedLocation) {
+            alert('Please select a location first');
+            return;
+        }
+
+        showLoading();
+        try {
+            const selectedCriteriaText = this.selectedCriteria.map(index =>
+                this.tierInfo[this.selectedTier].criteria[index]
+            );
+
+            console.log('Sending analysis request:', {
+                project_type: this.selectedProjectType,
+                analysis_level: this.selectedTier,
+                location: this.selectedLocation,
+                selected_criteria: selectedCriteriaText
+            });
+
+            const response = await fetch('/api/analyze-focus-areas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_type: this.selectedProjectType,
+                    analysis_level: this.selectedTier,
+                    location: this.selectedLocation,
+                    selected_criteria: selectedCriteriaText
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                console.log('Analysis received:', data.analysis);
+                this.displayFocusAreaAnalysis(data.analysis);
+            } else {
+                alert('Analysis Error: ' + data.error);
+            }
+        } catch (error) {
+            console.error('Analysis failed:', error);
+            alert('Analysis Error: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    displayFocusAreaAnalysis(analysis) {
+        const container = document.getElementById('workflow-container');
+
+        if (analysis.error) {
+            container.innerHTML = `
+                <div class="card analysis-section">
+                    <div class="card-header"><h3>Analysis Error</h3></div>
+                    <div class="card-body">
+                        <div class="alert alert-danger">${analysis.error}</div>
+                        <button class="btn btn-secondary" onclick="workflow.renderStep3()">← Back to Location Selection</button>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        const reportDate = new Date();
+        const dateOptions = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZoneName: 'short'
+        };
+        const formattedDate = reportDate.toLocaleDateString('en-US', dateOptions);
+
+        let html = `
+            <div class="card analysis-section">
+                <div class="card-header">
+                    <h3>📊 Focus Area Analysis: ${analysis.location}</h3>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-muted">${analysis.project_type.charAt(0).toUpperCase() + analysis.project_type.slice(1)} Project • ${analysis.analysis_level.charAt(0).toUpperCase() + analysis.analysis_level.slice(1)} Level</small>
+                        <small class="text-muted"><strong>Report Generated:</strong> ${formattedDate}</small>
+                    </div>
+                </div>
+                <div class="card-body">
+        `;
+
+        // Overall Assessment
+        if (analysis.overall_assessment) {
+            const assessment = analysis.overall_assessment;
+            const scoreColor = assessment.viability_score >= 7 ? 'success' : assessment.viability_score >= 5 ? 'warning' : 'danger';
+
+            html += `
+                <div class="alert alert-${scoreColor} mb-4">
+                    <h5>Overall Assessment</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <strong>Viability Score:</strong> ${assessment.viability_score}/10
+                        </div>
+                        <div class="col-md-4">
+                            <strong>Confidence:</strong> ${assessment.confidence_level}
+                        </div>
+                        <div class="col-md-4">
+                            <strong>Recommendation:</strong> ${assessment.key_recommendation}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Focus Area Analysis Cards
+        if (analysis.focus_area_analysis && analysis.focus_area_analysis.length > 0) {
+            html += `<h5>Focus Area Analysis</h5><div class="row">`;
+
+            analysis.focus_area_analysis.forEach((area, index) => {
+                const scoreColor = area.score >= 7 ? 'success' : area.score >= 5 ? 'warning' : 'danger';
+                const statusBadge = area.status === 'Strong' ? 'success' : area.status === 'Moderate' ? 'warning' : 'danger';
+
+                html += `
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">${area.focus_area}</h6>
+                                <div>
+                                    <span class="badge bg-${statusBadge}">${area.status}</span>
+                                    <span class="badge bg-${scoreColor} ms-1">${area.score}/10</span>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                ${area.strengths && area.strengths.length > 0 ? `
+                                    <h6 class="text-success">✓ Strengths</h6>
+                                    <ul class="small mb-2">
+                                        ${area.strengths.map(strength => `<li>${strength}</li>`).join('')}
+                                    </ul>
+                                ` : ''}
+
+                                ${area.challenges && area.challenges.length > 0 ? `
+                                    <h6 class="text-warning">⚠ Challenges</h6>
+                                    <ul class="small mb-2">
+                                        ${area.challenges.map(challenge => `<li>${challenge}</li>`).join('')}
+                                    </ul>
+                                ` : ''}
+
+                                ${area.opportunities && area.opportunities.length > 0 ? `
+                                    <h6 class="text-info">🚀 Opportunities</h6>
+                                    <ul class="small mb-2">
+                                        ${area.opportunities.map(opp => `<li>${opp}</li>`).join('')}
+                                    </ul>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+        }
+
+        // Action Buttons Section
+        html += `
+                <div class="mt-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6>🚀 Next Steps</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-3">Continue your renewable energy project development:</p>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-2">
+                                    <button class="btn btn-primary w-100" onclick="workflow.proceedToParcelSearch()">
+                                        🗺️ Find Available Parcels
+                                        <br><small>Search for suitable land parcels in ${analysis.location}</small>
+                                    </button>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <button class="btn btn-info w-100" onclick="workflow.exportReport()">
+                                        📄 Export Report
+                                        <br><small>Download analysis results</small>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <hr class="my-3">
+
+                            <div class="row">
+                                <div class="col-md-6 mb-2">
+                                    <button class="btn btn-secondary w-100" onclick="workflow.renderStep1()">
+                                        🔄 New Analysis
+                                    </button>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <button class="btn btn-outline-primary w-100" onclick="workflow.renderStep3()">
+                                        ← Modify Location
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `;
+
+        container.innerHTML = html;
+        this.currentAnalysis = analysis;
+
+        // Scroll to results
+        container.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async proceedToParcelSearch() {
+        if (!this.currentAnalysis) {
+            alert('No analysis data available');
+            return;
+        }
+
+        showLoading();
+        try {
+            this.showParcelSearchInterface();
+        } catch (error) {
+            console.error('Error loading parcel search:', error);
+            alert('Error loading parcel search interface');
+        } finally {
+            hideLoading();
+        }
+    }
+
+    showParcelSearchInterface() {
+        const container = document.getElementById('workflow-container');
+        const needsCountySelection = this.currentAnalysis.analysis_level === 'state';
+
+        let currentCounty = '';
+        if (!needsCountySelection) {
+            if (this.currentAnalysis.analysis_level === 'county' && this.currentAnalysis.location.includes(',')) {
+                currentCounty = this.currentAnalysis.location.split(',')[0].trim();
+            } else if (this.currentAnalysis.analysis_level === 'local' && this.currentAnalysis.location.includes(',')) {
+                const parts = this.currentAnalysis.location.split(',');
+                if (parts.length >= 2) {
+                    currentCounty = parts[1].trim();
+                }
+            }
+        }
+
+        const defaultMinAcreage = this.currentAnalysis.project_type === 'wind' ? 50 : 10;
+        const defaultMaxAcreage = this.currentAnalysis.project_type === 'wind' ? 5000 : 1000;
+
+        let html = `
+            <div class="card analysis-section">
+                <div class="card-header">
+                    <h3>🗺️ Parcel Search: ${this.currentAnalysis.location}</h3>
+                    <small class="text-muted">Find available land parcels for ${this.currentAnalysis.project_type} development</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h5>Search Parameters</h5>
+
+                            <div class="alert alert-info">
+                                <strong>Search Requirements:</strong> You must provide at least one search criteria below (minimum acreage, owner name, or parcel ID).
+                            </div>
+
+                            ${needsCountySelection ? `
+                                <div class="mb-3">
+                                    <label for="county-select" class="form-label">County Selection *</label>
+                                    <select id="county-select" class="form-select" onchange="workflow.validateParcelForm()">
+                                        <option value="">Choose a county in ${this.currentAnalysis.location}...</option>
+                                    </select>
+                                    <div id="county-loading" class="mt-2" style="display: none;">
+                                        <div class="spinner-border spinner-border-sm" role="status">
+                                            <span class="visually-hidden">Loading counties...</span>
+                                        </div>
+                                        <small class="text-muted ms-2">Loading counties...</small>
+                                    </div>
+                                    <small class="text-muted">County is required for parcel search</small>
+                                </div>
+                            ` : `
+                                <div class="mb-3">
+                                    <label class="form-label">Selected County</label>
+                                    <input type="text" class="form-control" value="${currentCounty}" readonly>
+                                    <small class="text-muted">County from your analysis selection</small>
+                                </div>
+                            `}
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="min-acreage" class="form-label">Minimum Acreage</label>
+                                        <input type="number" id="min-acreage" class="form-control"
+                                               placeholder="e.g., ${defaultMinAcreage}" min="1" max="10000"
+                                               oninput="workflow.validateParcelForm()">
+                                        <small class="text-muted">Recommended minimum for ${this.currentAnalysis.project_type}: ${defaultMinAcreage} acres</small>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="max-acreage" class="form-label">Maximum Acreage</label>
+                                        <input type="number" id="max-acreage" class="form-control"
+                                               placeholder="Leave blank for no limit" min="1" max="50000"
+                                               oninput="workflow.validateParcelForm()">
+                                        <small class="text-muted">Typical range for ${this.currentAnalysis.project_type}: up to ${defaultMaxAcreage} acres</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="owner-name" class="form-label">Owner Name</label>
+                                        <input type="text" id="owner-name" class="form-control"
+                                               placeholder="e.g., SMITH, JOHNSON, LLC, TRUST"
+                                               oninput="workflow.validateParcelForm()">
+                                        <small class="text-muted">Full or partial owner name. Common names return many results.</small>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="parcel-id" class="form-label">Parcel ID</label>
+                                        <input type="text" id="parcel-id" class="form-control"
+                                               placeholder="e.g., 123-456-789"
+                                               oninput="workflow.validateParcelForm()">
+                                        <small class="text-muted">Exact parcel identification number from county records</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Project Type</label>
+                                <input type="text" class="form-control" value="${this.currentAnalysis.project_type.charAt(0).toUpperCase() + this.currentAnalysis.project_type.slice(1)}" readonly>
+                                <small class="text-muted">Based on your analysis configuration</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <h5>Search Information</h5>
+
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6>Data Source</h6>
+                                    <p class="small mb-2"><strong>Provider:</strong> ReportAll USA</p>
+                                    <p class="small mb-2"><strong>Coverage:</strong> US nationwide county-level parcel data</p>
+                                    <p class="small mb-0"><strong>Updates:</strong> Monthly</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <h6>What you'll get:</h6>
+                                <ul class="small">
+                                    <li>Parcel boundaries (GeoPackage format)</li>
+                                    <li>Property ownership information</li>
+                                    <li>Acreage calculations</li>
+                                    <li>Parcel identification numbers</li>
+                                    <li>Geographic coordinates</li>
+                                    <li>CSV data for analysis</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <button class="btn btn-info me-2" id="preview-btn" onclick="workflow.previewParcelSearch()" disabled>
+                                👁️ Preview Count
+                            </button>
+                            <small class="text-muted">See how many parcels match your criteria</small>
+                        </div>
+
+                        <div>
+                            <button class="btn btn-secondary me-2" onclick="workflow.displayFocusAreaAnalysis(workflow.currentAnalysis)">← Back</button>
+                            <button class="btn btn-primary" id="search-btn" onclick="workflow.executeParcelSearch()" disabled>
+                                🗺️ Search Parcels
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="parcel-search-results" class="mt-4" style="display: none;">
+                        <!-- Results will be displayed here -->
+                    </div>
+                </div>
+            </div>
+        `;
+
+        container.innerHTML = html;
+
+        if (needsCountySelection) {
+            this.loadCountiesForParcelSearch();
+        } else {
+            this.validateParcelForm();
+        }
+    }
+
+    async loadCountiesForParcelSearch() {
+        const countySelect = document.getElementById('county-select');
+        const loadingDiv = document.getElementById('county-loading');
+
+        if (!countySelect || !loadingDiv) {
+            console.error('County select elements not found');
+            return;
+        }
+
+        const stateName = this.currentAnalysis.location;
+
+        loadingDiv.style.display = 'block';
+        countySelect.disabled = true;
+
+        try {
+            const response = await fetch(`/api/counties/${stateName}`);
+            const data = await response.json();
+
+            if (data.success && data.counties && data.counties.length > 0) {
+                countySelect.innerHTML = `
+                    <option value="">Choose a county in ${stateName}...</option>
+                    ${data.counties.map(county => `<option value="${county}">${county}</option>`).join('')}
+                `;
+                countySelect.disabled = false;
+            } else {
+                countySelect.innerHTML = '<option value="">No counties available for this state</option>';
+                console.error('No counties found for state:', stateName);
+            }
+        } catch (error) {
+            console.error('Error loading counties:', error);
+            countySelect.innerHTML = '<option value="">Error loading counties</option>';
+        } finally {
+            loadingDiv.style.display = 'none';
+        }
+    }
+
+    validateParcelForm() {
+        const countySelect = document.getElementById('county-select');
+        const minAcreage = document.getElementById('min-acreage');
+        const ownerName = document.getElementById('owner-name');
+        const parcelId = document.getElementById('parcel-id');
+        const previewBtn = document.getElementById('preview-btn');
+        const searchBtn = document.getElementById('search-btn');
+
+        const needsCountySelection = this.currentAnalysis.analysis_level === 'state';
+        const countySelected = !needsCountySelection || (countySelect && countySelect.value);
+
+        const hasMinAcreage = minAcreage && minAcreage.value.trim();
+        const hasOwnerName = ownerName && ownerName.value.trim();
+        const hasParcelId = parcelId && parcelId.value.trim();
+
+        const hasSearchCriteria = hasMinAcreage || hasOwnerName || hasParcelId;
+        const formValid = countySelected && hasSearchCriteria;
+
+        if (previewBtn) {
+            previewBtn.disabled = !formValid;
+        }
+
+        if (searchBtn) {
+            searchBtn.disabled = !formValid;
+        }
+
+        return formValid;
+    }
+
+    getParcelSearchParameters() {
+        const countySelect = document.getElementById('county-select');
+        const minAcreage = document.getElementById('min-acreage');
+        const maxAcreage = document.getElementById('max-acreage');
+        const ownerName = document.getElementById('owner-name');
+        const parcelId = document.getElementById('parcel-id');
+
+        let params = {
+            location: this.currentAnalysis.location,
+            project_type: this.currentAnalysis.project_type,
+            analysis_level: this.currentAnalysis.analysis_level
+        };
+
+        if (this.currentAnalysis.analysis_level === 'state' && countySelect && countySelect.value) {
+            params.selected_county = countySelect.value;
+        }
+
+        if (minAcreage && minAcreage.value.trim()) {
+            params.min_acreage = minAcreage.value.trim();
+        }
+        if (maxAcreage && maxAcreage.value.trim()) {
+            params.max_acreage = maxAcreage.value.trim();
+        }
+        if (ownerName && ownerName.value.trim()) {
+            params.owner = ownerName.value.trim();
+        }
+        if (parcelId && parcelId.value.trim()) {
+            params.parcel_id = parcelId.value.trim();
+        }
+
+        return params;
+    }
+
+    async previewParcelSearch() {
+        if (!this.validateParcelForm()) {
+            alert('Please select a county and provide at least one search criteria (minimum acreage, owner name, or parcel ID)');
+            return;
+        }
+
+        const searchParams = this.getParcelSearchParameters();
+        const resultsDiv = document.getElementById('parcel-search-results');
+
+        showLoading();
+        resultsDiv.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/parcel-search/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(searchParams)
+            });
+
+            // Add this check before parsing JSON
+            const responseText = await response.text();
+            console.log('Raw response:', responseText); // Debug log
+
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (parseError) {
+                console.error('JSON parse error:', parseError);
+                console.error('Response text:', responseText);
+                throw new Error('Invalid response format from server');
+            }
+
+            if (data.success) {
+                this.displayParcelSearchResults(data);
+                    } else {
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h6>Preview Error</h6>
+                        <p>${data.error}</p>
+                    </div>
+                `;
+                resultsDiv.style.display = 'block';
+            }
+
+        } catch (error) {
+            resultsDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Preview Error</h6>
+                    <p>Failed to preview search: ${error.message}</p>
+                </div>
+            `;
+            resultsDiv.style.display = 'block';
+        } finally {
+            hideLoading();
+        }
+    }
+
+    async executeParcelSearch() {
+        if (!this.validateParcelForm()) {
+            alert('Please select a county and provide at least one search criteria (minimum acreage, owner name, or parcel ID)');
+            return;
+        }
+
+        const searchParams = this.getParcelSearchParameters();
+        const resultsDiv = document.getElementById('parcel-search-results');
+
+        const criteria = [];
+        if (searchParams.min_acreage) criteria.push(`Minimum: ${searchParams.min_acreage} acres`);
+        if (searchParams.max_acreage) criteria.push(`Maximum: ${searchParams.max_acreage} acres`);
+        if (searchParams.owner) criteria.push(`Owner: "${searchParams.owner}"`);
+        if (searchParams.parcel_id) criteria.push(`Parcel ID: "${searchParams.parcel_id}"`);
+
+        const county = searchParams.selected_county || this.currentAnalysis.location.split(',')[0];
+        const confirmMessage = `Search for parcels in ${county}?\n\nSearch criteria: ${criteria.join(', ')}\n\nThis may take 1-2 minutes for large areas.`;
+
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        showLoading();
+        resultsDiv.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/parcel-search/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(searchParams)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.displayParcelSearchResults(data);
+            } else {
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h6>Search Error</h6>
+                        <p>${data.error}</p>
+                        ${data.details ? `<pre class="small mt-2">${JSON.stringify(data.details, null, 2)}</pre>` : ''}
+                    </div>
+                `;
+                resultsDiv.style.display = 'block';
+            }
+
+        } catch (error) {
+            resultsDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Search Error</h6>
+                    <p>Failed to execute search: ${error.message}</p>
+                </div>
+            `;
+            resultsDiv.style.display = 'block';
+        } finally {
+            hideLoading();
+        }
+    }
+
+    displayParcelSearchResults(data) {
+        const resultsDiv = document.getElementById('parcel-search-results');
+
+        const resultDate = new Date().toLocaleDateString('en-US', {
+            year: 'numeric', month: 'long', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+
+        // Create download section with proper URL construction
+        let downloadSection = '';
+
+        if (data.record_count > 0) {
+            downloadSection = `
+                <div class="file-actions">
+                    <h6>📁 Download Options</h6>
+
+                    <!-- CSV File -->
+                    <div class="mb-3">
+                        <div class="file-type-label">📊 CSV Format</div>
+                        <p class="small text-muted mb-2">Spreadsheet format - opens in Excel, Google Sheets</p>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <button class="btn btn-info w-100" onclick="workflow.previewFile('${data.csv_file_path || data.file_path}', 'csv')">
+                                    <i class="fas fa-eye me-2"></i>Preview CSV Data
+                                </button>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <button class="btn btn-success w-100" onclick="workflow.downloadFile('${data.csv_file_path || data.file_path}')">
+                                    <i class="fas fa-download me-2"></i>Download CSV
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GeoPackage File -->
+                    ${data.file_path ? `
+                    <div class="mb-3">
+                        <div class="file-type-label">🗺️ GeoPackage Format</div>
+                        <p class="small text-muted mb-2">GIS format with spatial data - opens in QGIS, ArcGIS</p>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <button class="btn btn-outline-info w-100" onclick="workflow.previewFile('${data.file_path}', 'gpkg')">
+                                    <i class="fas fa-map me-2"></i>Preview Spatial Data
+                                </button>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <button class="btn btn-primary w-100" onclick="workflow.downloadFile('${data.file_path}')">
+                                    <i class="fas fa-download me-2"></i>Download GPKG
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <div class="mt-3 p-2 bg-light rounded">
+                        <small class="text-muted">
+                            <strong>Storage:</strong> Google Cloud Storage •
+                            <strong>Location:</strong> ${data.bucket_path || 'Cloud Storage'} •
+                            <strong>Processing Time:</strong> ${data.processing_time}s
+                        </small>
+                    </div>
+                </div>
+            `;
+        }
+
+        let html = `
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">🗺️ Parcel Search Results</h5>
+                    <small class="text-muted"><strong>Generated:</strong> ${resultDate}</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="alert alert-success">
+                                <h6>✅ Search Completed</h6>
+                                <p><strong>Found:</strong> ${data.record_count} suitable parcels</p>
+                                <p><strong>Location:</strong> ${data.county_name}, ${data.state_abbr}</p>
+                                <p><strong>Processing Time:</strong> ${data.processing_time} seconds</p>
+                                <p><strong>Storage:</strong> Google Cloud Storage</p>
+                            </div>
+
+                            ${downloadSection}
+                        </div>
+
+                        <div class="col-md-4">
+                            <h6>📋 Recommended Next Steps</h6>
+                            <ul class="small">
+                                ${this.generateNextStepsForCount(data.record_count, data.search_type || 'general').map(step => `<li>${step}</li>`).join('')}
+                            </ul>
+
+                            <div class="mt-3">
+                                <h6>🛠️ Tools for Analysis</h6>
+                                <ul class="small">
+                                    <li><strong>Excel/Google Sheets:</strong> Open CSV file for basic analysis</li>
+                                    <li><strong>QGIS:</strong> Use GeoPackage for spatial analysis</li>
+                                    <li><strong>Python/R:</strong> Advanced data analysis and modeling</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <button id="analyze-suitability-btn" class="analyze-suitability-btn">
+                                🔬 Analyze Parcel Suitability
+                            </button>
+                            <small class="text-muted d-block mt-2">Get AI analysis of parcel characteristics for renewable energy</small>
+                        </div>
+                        <div class="col-md-6">
+                            <button class="btn btn-info w-100" onclick="workflow.generateSiteReport('${data.search_id || 'none'}')">
+                                📊 Generate Site Report
+                            </button>
+                            <small class="text-muted d-block mt-2">Create comprehensive development feasibility report</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        resultsDiv.innerHTML = html;
+        resultsDiv.style.display = 'block';
+
+        // Store search results for later use
+        this.currentParcelResults = data;
+
+        // Store globally for easy access
+        window.currentParcelSearchResults = data;
+
+        // Attach the suitability analysis button handler
+        this.attachSuitabilityButtonHandler();
+
+        console.log('Parcel search results displayed, data stored:', data);
+    }
+
+    // File handling methods
+    previewFile(filePath, fileType) {
+        if (!filePath) {
+            alert('File path not available');
+            return;
+        }
+
+        // Construct preview URL
+        const encodedPath = encodeURIComponent(filePath);
+        const previewUrl = `/preview/${encodedPath}`;
+
+        // Open in new tab
+        window.open(previewUrl, '_blank');
+
+        console.log('Opening preview for:', filePath);
+    }
+
+    downloadFile(filePath) {
+        if (!filePath) {
+            alert('File path not available');
+            return;
+        }
+
+        // Show confirmation for large files
+        if (this.currentParcelResults && this.currentParcelResults.record_count > 10000) {
+            if (!confirm(`This file contains ${this.currentParcelResults.record_count.toLocaleString()} records and may be large. Continue with download?`)) {
+                return;
+            }
+        }
+
+        // Construct download URL
+        const encodedPath = encodeURIComponent(filePath);
+        const downloadUrl = `/download/${encodedPath}`;
+
+        // Create temporary link and click it
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        console.log('Downloading file:', filePath);
+    }
+
+    generateNextStepsForCount(count, searchType) {
+        if (count === 0) {
+            if (searchType === 'parcel_id') {
+                return [
+                    "Verify the parcel ID is correct and formatted properly",
+                    "Check if the parcel exists in this county",
+                    "Try searching by owner name instead"
+                ];
+            } else if (searchType === 'owner') {
+                return [
+                    "Try variations of the owner name (with/without suffixes)",
+                    "Search for partial names or common abbreviations",
+                    "Consider expanding search to adjacent counties"
+                ];
+            } else {
+                return [
+                    "Consider expanding search to adjacent counties",
+                    "Review minimum acreage requirements - may be too restrictive",
+                    "Try searching by owner names in the area"
+                ];
+            }
+        } else if (count < 5) {
+            return [
+                "Prioritize parcels with best grid proximity and access",
+                "Conduct preliminary site visits for all candidates",
+                "Begin outreach to property owners for development interest"
+            ];
+        } else if (count < 25) {
+            return [
+                "Filter parcels by proximity to transmission infrastructure",
+                "Use GIS analysis to screen for environmental constraints",
+                "Develop scoring matrix for parcel prioritization"
+            ];
+        } else {
+            return [
+                "Apply additional filtering criteria (zoning, slopes, etc.)",
+                "Use automated screening tools for large parcel sets",
+                "Consider batch analysis for regional development strategy"
+            ];
+        }
+    }
+
+    attachSuitabilityButtonHandler() {
+        setTimeout(() => {
+            const analyzeButton = document.getElementById('analyze-suitability-btn');
+            if (analyzeButton) {
+                analyzeButton.removeEventListener('click', this.analyzeParcelSuitability.bind(this));
+                analyzeButton.addEventListener('click', this.analyzeParcelSuitability.bind(this));
+                console.log('Suitability analysis button handler attached');
+            } else {
+                console.error('Analyze suitability button not found');
+            }
+        }, 100);
+    }
+
+    async analyzeParcelSuitability() {
+        const button = document.getElementById('analyze-suitability-btn');
+        const originalText = button.textContent;
+
+        try {
+            button.disabled = true;
+            button.textContent = 'Analyzing Parcels...';
+
+            // Show progress indicator
+            this.showAnalysisProgress();
+
+            console.log('Starting parcel suitability analysis...');
+
+            // Get parcel data - prioritize direct data from search results
+            let parcelData = [];
+
+            if (this.currentParcelResults && this.currentParcelResults.parcel_data) {
+                parcelData = this.currentParcelResults.parcel_data;
+                console.log(`Using direct parcel data: ${parcelData.length} parcels`);
+            } else {
+                throw new Error('No parcel data available for analysis. Please ensure you have completed a parcel search first.');
+            }
+
+            if (!parcelData || parcelData.length === 0) {
+                throw new Error('No parcel data available for analysis.');
+            }
+
+            console.log(`Starting analysis of ${parcelData.length} parcels`);
+
+            const response = await fetch('/api/parcel/analyze_suitability', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    parcels: parcelData,
+                    search_results: this.currentParcelResults,  // Add this line
+                    project_type: this.currentAnalysis.project_type,
+                    analysis_type: 'renewable_energy_suitability'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Analysis failed: HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                console.log('Analysis completed successfully');
+                this.displaySuitabilityResults(result.data);
+            } else {
+                throw new Error(result.error || 'Analysis failed');
+            }
+
+        } catch (error) {
+            console.error('Suitability analysis failed:', error);
+            this.showErrorMessage(`Analysis failed: ${error.message}`);
+        } finally {
+            button.disabled = false;
+            button.textContent = originalText;
+            this.hideAnalysisProgress();
+        }
+    }
+
+    showAnalysisProgress() {
+        // Create progress overlay
+        const progressHtml = `
+            <div class="analysis-progress" id="analysis-progress">
+                <div class="progress-spinner"></div>
+                <p>Analyzing parcel suitability...</p>
+                <small>Running slope and transmission analysis</small>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', progressHtml);
+    }
+
+    hideAnalysisProgress() {
+        const progressEl = document.getElementById('analysis-progress');
+        if (progressEl) {
+            progressEl.remove();
+        }
+    }
+
+    displaySuitabilityResults(data) {
+        const container = document.getElementById('workflow-container');
+
+        const resultDate = new Date().toLocaleDateString('en-US', {
+            year: 'numeric', month: 'long', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+
+        // Create the results display
+        const html = `
+            <div class="suitability-results-container">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h4>🔬 Parcel Suitability Analysis Results</h4>
+                        <small class="text-muted">Generated: ${resultDate}</small>
+                    </div>
+                    <div class="card-body">
+
+                        <!-- Summary Statistics -->
+                        <div class="suitability-summary">
+                            <h5>📊 Analysis Summary</h5>
+                            <div class="summary-stats">
+                                <div class="stat-item">
+                                    <span class="stat-value">${data.total_parcels}</span>
+                                    <span class="stat-label">Total Parcels</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${data.suitable_parcels}</span>
+                                    <span class="stat-label">Suitable Parcels</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${Math.round((data.suitable_parcels / data.total_parcels) * 100)}%</span>
+                                    <span class="stat-label">Suitability Rate</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${data.analysis_parameters.slope_threshold}°</span>
+                                    <span class="stat-label">Max Slope</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${data.analysis_parameters.transmission_buffer} mi</span>
+                                    <span class="stat-label">Transmission Buffer</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${data.analysis_parameters.voltage_range}</span>
+                                    <span class="stat-label">Voltage Range</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filter Controls -->
+                        <div class="mb-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="suitability-filter" class="form-label">Filter by Suitability:</label>
+                                    <select id="suitability-filter" class="form-select" onchange="workflow.filterSuitabilityResults()">
+                                        <option value="all">All Parcels</option>
+                                        <option value="suitable">Suitable Only</option>
+                                        <option value="unsuitable">Unsuitable Only</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="score-filter" class="form-label">Minimum Score:</label>
+                                    <input type="range" id="score-filter" class="form-range" min="0" max="100" value="0"
+                                           oninput="workflow.updateScoreFilter(this.value)">
+                                    <small class="text-muted">Score: <span id="score-value">0</span>+</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Results Table -->
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover" id="suitability-table">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Parcel ID</th>
+                                        <th>Acres</th>
+                                        <th>Owner</th>
+                                        <th>Suitability</th>
+                                        <th>Overall Score</th>
+                                        <th>Slope</th>
+                                        <th>Transmission</th>
+                                        <th>Notes</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="suitability-table-body">
+                                    ${this.generateSuitabilityTableRows(data.parcels)}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Export Options -->
+                        <div class="row mt-4">
+                            <div class="col-md-4">
+                                <button class="btn btn-success w-100" onclick="workflow.exportSuitableParcelsList()">
+                                    📋 Export Suitable Parcels
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-info w-100" onclick="workflow.exportFullSuitabilityReport()">
+                                    📊 Export Full Report
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-secondary w-100" onclick="workflow.displayParcelSearchResults(workflow.currentParcelResults)">
+                                    ← Back to Search Results
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        container.innerHTML = html;
+
+        // Store results for filtering and export
+        this.currentSuitabilityResults = data;
+
+        // Scroll to results
+        container.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    generateSuitabilityTableRows(parcels) {
+        return parcels.map(parcel => {
+            const analysis = parcel.suitability_analysis;
+            const suitabilityBadge = analysis.is_suitable ?
+                '<span class="badge bg-success">✓ Suitable</span>' :
+                '<span class="badge bg-danger">✗ Not Suitable</span>';
+
+            const scoreBadge = this.getScoreBadge(analysis.overall_score);
+            const slopeInfo = this.formatSlopeInfo(analysis);
+            const transmissionInfo = this.formatTransmissionInfo(analysis);
+
+            return `
+                <tr class="${analysis.is_suitable ? 'table-success' : 'table-warning'}">
+                    <td><strong>${parcel.parcel_id}</strong></td>
+                    <td>${parseFloat(parcel.acreage || parcel.acres || 0).toFixed(1)}</td>
+                    <td>${this.truncateText(parcel.owner || 'Unknown', 20)}</td>
+                    <td>${suitabilityBadge}</td>
+                    <td>${scoreBadge}</td>
+                    <td>${slopeInfo}</td>
+                    <td>${transmissionInfo}</td>
+                    <td><small>${this.truncateText(analysis.analysis_notes, 50)}</small></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="workflow.showParcelDetails('${parcel.parcel_id}')">
+                            Details
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    getScoreBadge(score) {
+        if (score >= 80) return `<span class="badge bg-success">${score}</span>`;
+        if (score >= 60) return `<span class="badge bg-warning">${score}</span>`;
+        return `<span class="badge bg-danger">${score}</span>`;
+    }
+
+    formatSlopeInfo(analysis) {
+        const slope = analysis.slope_degrees;
+        const suitable = analysis.slope_suitable;
+
+        if (slope === 'Unknown') {
+            return '<small class="text-muted">Unknown</small>';
+        }
+
+        const slopeValue = parseFloat(slope);
+        const color = suitable ? 'text-success' : 'text-danger';
+        const icon = suitable ? '✓' : '✗';
+
+        return `<span class="${color}">${icon} ${slopeValue.toFixed(1)}°</span>`;
+    }
+
+    formatTransmissionInfo(analysis) {
+        const distance = analysis.transmission_distance;
+        const voltage = analysis.transmission_voltage;
+        const suitable = analysis.transmission_suitable;
+
+        if (distance === 'Unknown') {
+            return '<small class="text-muted">No data</small>';
+        }
+
+        const distValue = parseFloat(distance);
+        const voltValue = parseFloat(voltage);
+        const color = suitable ? 'text-success' : 'text-danger';
+        const icon = suitable ? '✓' : '✗';
+
+        return `<span class="${color}">${icon} ${distValue.toFixed(2)} mi<br><small>${voltValue.toFixed(0)} kV</small></span>`;
+    }
+
+    truncateText(text, maxLength) {
+        if (!text) return '';
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
+    filterSuitabilityResults() {
+        const filter = document.getElementById('suitability-filter').value;
+        const tableBody = document.getElementById('suitability-table-body');
+
+        if (!this.currentSuitabilityResults) return;
+
+        let filteredParcels = this.currentSuitabilityResults.parcels;
+
+        if (filter === 'suitable') {
+            filteredParcels = filteredParcels.filter(p => p.suitability_analysis.is_suitable);
+        } else if (filter === 'unsuitable') {
+            filteredParcels = filteredParcels.filter(p => !p.suitability_analysis.is_suitable);
+        }
+
+        tableBody.innerHTML = this.generateSuitabilityTableRows(filteredParcels);
+    }
+
+    updateScoreFilter(value) {
+        document.getElementById('score-value').textContent = value;
+
+        if (!this.currentSuitabilityResults) return;
+
+        const tableBody = document.getElementById('suitability-table-body');
+        const suitabilityFilter = document.getElementById('suitability-filter').value;
+
+        let filteredParcels = this.currentSuitabilityResults.parcels;
+
+        // Apply suitability filter first
+        if (suitabilityFilter === 'suitable') {
+            filteredParcels = filteredParcels.filter(p => p.suitability_analysis.is_suitable);
+        } else if (suitabilityFilter === 'unsuitable') {
+            filteredParcels = filteredParcels.filter(p => !p.suitability_analysis.is_suitable);
+        }
+
+        // Apply score filter
+        filteredParcels = filteredParcels.filter(p => p.suitability_analysis.overall_score >= parseFloat(value));
+
+        tableBody.innerHTML = this.generateSuitabilityTableRows(filteredParcels);
+    }
+
+    showParcelDetails(parcelId) {
+        const parcel = this.currentSuitabilityResults.parcels.find(p => p.parcel_id === parcelId);
+
+        if (!parcel) {
+            alert('Parcel details not found');
+            return;
+        }
+
+        const analysis = parcel.suitability_analysis;
+
+        const detailsHtml = `
+            <div class="modal fade" id="parcelDetailsModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Parcel Details: ${parcel.parcel_id}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Basic Information</h6>
+                                    <p><strong>Parcel ID:</strong> ${parcel.parcel_id}</p>
+                                    <p><strong>Owner:</strong> ${parcel.owner}</p>
+                                    <p><strong>Acreage:</strong> ${parseFloat(parcel.acreage || parcel.acres || 0).toFixed(1)} acres</p>
+                                    <p><strong>Location:</strong> ${parcel.county || 'Unknown'}, ${parcel.state_abbr || 'Unknown'}</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Suitability Analysis</h6>
+                                    <p><strong>Overall Score:</strong> ${analysis.overall_score}/100</p>
+                                    <p><strong>Slope Score:</strong> ${analysis.slope_score}/100 (${analysis.slope_degrees}°)</p>
+                                    <p><strong>Transmission Score:</strong> ${analysis.transmission_score}/100</p>
+                                    <p><strong>Distance to Transmission:</strong> ${analysis.transmission_distance} miles</p>
+                                    <p><strong>Transmission Voltage:</strong> ${analysis.transmission_voltage} kV</p>
+                                </div>
+                            </div>
+                            <hr>
+                            <h6>Analysis Notes</h6>
+                            <p>${analysis.analysis_notes}</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Remove existing modal if present
+        const existingModal = document.getElementById('parcelDetailsModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // Add modal to page
+        document.body.insertAdjacentHTML('beforeend', detailsHtml);
+
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('parcelDetailsModal'));
+        modal.show();
+    }
+
+    exportSuitableParcelsList() {
+        if (!this.currentSuitabilityResults) {
+            alert('No suitability results to export');
+            return;
+        }
+
+        const suitableParcels = this.currentSuitabilityResults.parcels.filter(p => p.suitability_analysis.is_suitable);
+
+        if (suitableParcels.length === 0) {
+            alert('No suitable parcels found to export');
+            return;
+        }
+
+        // Create CSV content
+        const headers = ['Parcel ID', 'Owner', 'Acres', 'Overall Score', 'Slope (degrees)', 'Transmission Distance (mi)', 'Transmission Voltage (kV)', 'Notes'];
+        let csvContent = headers.join(',') + '\n';
+
+        suitableParcels.forEach(parcel => {
+            const analysis = parcel.suitability_analysis;
+            const row = [
+                parcel.parcel_id,
+                `"${parcel.owner || 'Unknown'}"`,
+                parseFloat(parcel.acreage || parcel.acres || 0).toFixed(1),
+                analysis.overall_score,
+                analysis.slope_degrees,
+                analysis.transmission_distance,
+                analysis.transmission_voltage,
+                `"${analysis.analysis_notes}"`
+            ];
+            csvContent += row.join(',') + '\n';
+        });
+
+        // Download CSV
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `suitable_parcels_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+
+    exportFullSuitabilityReport() {
+        if (!this.currentSuitabilityResults) {
+            alert('No suitability results to export');
+            return;
+        }
+
+        // Create comprehensive CSV content
+        const headers = [
+            'Parcel ID', 'Owner', 'Acres', 'County', 'State', 'Overall Suitability', 'Overall Score',
+            'Slope Score', 'Slope (degrees)', 'Slope Suitable', 'Transmission Score',
+            'Transmission Distance (mi)', 'Transmission Voltage (kV)', 'Transmission Suitable',
+            'Analysis Notes'
+        ];
+        let csvContent = headers.join(',') + '\n';
+
+        this.currentSuitabilityResults.parcels.forEach(parcel => {
+            const analysis = parcel.suitability_analysis;
+            const row = [
+                parcel.parcel_id,
+                `"${parcel.owner || 'Unknown'}"`,
+                parseFloat(parcel.acreage || parcel.acres || 0).toFixed(1),
+                parcel.county || 'Unknown',
+                parcel.state_abbr || 'Unknown',
+                analysis.is_suitable ? 'Suitable' : 'Not Suitable',
+                analysis.overall_score,
+                analysis.slope_score,
+                analysis.slope_degrees,
+                analysis.slope_suitable ? 'Yes' : 'No',
+                analysis.transmission_score,
+                analysis.transmission_distance,
+                analysis.transmission_voltage,
+                analysis.transmission_suitable ? 'Yes' : 'No',
+                `"${analysis.analysis_notes}"`
+            ];
+            csvContent += row.join(',') + '\n';
+        });
+
+        // Download CSV
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `parcel_suitability_report_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+
+    showErrorMessage(message) {
+        const container = document.getElementById('workflow-container');
+        const errorHtml = `
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <h6>Analysis Error</h6>
+                <p>${message}</p>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        container.insertAdjacentHTML('afterbegin', errorHtml);
+    }
+
+    exportReport() {
+        if (!this.currentAnalysis) {
+            alert('No analysis data to export');
+            return;
+        }
+
+        let exportText = `RENEWABLE ENERGY PROJECT ANALYSIS REPORT\n`;
+        exportText += `Generated: ${new Date().toLocaleDateString()}\n\n`;
+        exportText += `Project: ${this.currentAnalysis.project_type.toUpperCase()} PROJECT\n`;
+        exportText += `Location: ${this.currentAnalysis.location}\n`;
+        exportText += `Analysis Level: ${this.currentAnalysis.analysis_level.toUpperCase()}\n\n`;
+
+        if (this.currentAnalysis.overall_assessment) {
+            exportText += `OVERALL ASSESSMENT\n`;
+            exportText += `Viability Score: ${this.currentAnalysis.overall_assessment.viability_score}/10\n`;
+            exportText += `Confidence: ${this.currentAnalysis.overall_assessment.confidence_level}\n`;
+            exportText += `Recommendation: ${this.currentAnalysis.overall_assessment.key_recommendation}\n\n`;
+        }
+
+        const blob = new Blob([exportText], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `renewable_energy_analysis_${this.currentAnalysis.location.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+
+    generateSiteReport(searchId) {
+        alert('Site report generation will be implemented in the future. This will create comprehensive reports combining parcel data with renewable energy feasibility analysis.');
+    }
+}
+
+// Initialize workflow
+const workflow = new ProjectWorkflow();
+document.addEventListener('DOMContentLoaded', () => workflow.initialize());
+
+// Utility functions
+function showLoading() {
+    const loadingEl = document.getElementById('loading');
+    if (loadingEl) {
+        loadingEl.style.display = 'block';
+    }
+}
+
+function hideLoading() {
+    const loadingEl = document.getElementById('loading');
+    if (loadingEl) {
+        loadingEl.style.display = 'none';
+    }
+}
+
+function updateVariable(name, value) {
+    currentVariables[name] = value;
+}
+
+console.log('Optimized workflow with preview/download functionality loaded successfully!');
+</script>
 </body>
 </html>
