@@ -5,24 +5,17 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3610a289-6580-45c1-bc59-dd4045d93c72" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/debug_env.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_api_key.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_dependencies.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/crm_debug_payload.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/crm_export_debugger.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/services/crm_service.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_monday_api_call.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/BCF_Dev_Land.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/BCF_Dev_Land.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cloudbuild.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/cloudbuild.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/project_config.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/project_config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/ai_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/ai_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/templates/file_preview.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/file_preview.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bigquery_slope_analysis.py" beforeDir="false" afterPath="$PROJECT_DIR$/bigquery_slope_analysis.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/templates/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_api_key.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_dependencies.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -40,21 +33,21 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "georgericeegb"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;georgericeegb&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/georgericeegb/renewable-energy-analyzer.git",
-    "accountId": "66dbfd49-a031-4000-ad69-addc59f46609"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/georgericeegb/renewable-energy-analyzer.git&quot;,
+    &quot;accountId&quot;: &quot;66dbfd49-a031-4000-ad69-addc59f46609&quot;
   }
-}]]></component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 0
-}]]></component>
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0
+}</component>
   <component name="ProjectId" id="319UcjQzoyOVjiOFqQZASFQM7Gd" />
   <component name="ProjectLevelVcsManager">
     <ConfirmationsSetting value="2" id="Add" />
@@ -69,10 +62,14 @@
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main"
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "C:/Users/georg/BCF_Dev_Land/templates"
   }
 }]]></component>
   <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\georg\BCF_Dev_Land\templates" />
+    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\georg\BCF_Dev_Land\models" />
       <recent name="C:\Users\georg\BCF_Dev_Land\services" />

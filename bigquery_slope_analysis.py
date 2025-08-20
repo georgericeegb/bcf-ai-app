@@ -10,6 +10,17 @@ import time
 import traceback
 import tempfile
 from typing import Dict, Any, Optional
+import os, random  # random is already used below
+
+SEED = int(os.getenv("SLOPE_SEED", "1337"))
+
+def set_deterministic_seed(seed: int = SEED) -> None:
+    random.seed(seed)
+    try:
+        import numpy as np  # if you later add any numpy randomness
+        np.random.seed(seed)
+    except Exception:
+        pass
 
 # Setup logging
 logging.basicConfig(level=logging.INFO,
@@ -28,6 +39,34 @@ except ImportError as e:
     raise
 
 
+def clean_dataframe_for_json(df):
+    """Clean DataFrame to prevent JSON serialization errors"""
+    import numpy as np
+    import pandas as pd
+
+    # Replace NaN and infinity values
+    df = df.replace([np.inf, -np.inf], np.nan)
+
+    # Fill NaN values with appropriate defaults for numeric columns
+    numeric_columns = df.select_dtypes(include=[np.number]).columns
+    for col in numeric_columns:
+        if 'slope' in col.lower() or 'percent' in col.lower():
+            df[col] = df[col].fillna(0.0)
+        elif 'acres' in col.lower():
+            df[col] = df[col].fillna(0.0)
+        elif 'cells' in col.lower():
+            df[col] = df[col].fillna(0)
+        else:
+            df[col] = df[col].fillna(0.0)
+
+    # Fill NaN values in string columns
+    string_columns = df.select_dtypes(include=['object']).columns
+    for col in string_columns:
+        if col != 'geometry':  # Don't modify geometry column
+            df[col] = df[col].fillna('Unknown')
+
+    return df
+
 def run_headless_fixed(
         input_file_path: str,
         max_slope_degrees: float = 15.0,
@@ -39,6 +78,8 @@ def run_headless_fixed(
     """
     Fixed run_headless function with proper error handling and function calls
     """
+    set_deterministic_seed()
+    logger.info(f"Deterministic seed set to {SEED}")
 
     start_time = time.time()
     temp_files = []
@@ -118,6 +159,7 @@ def run_headless_fixed(
                 }
 
             logger.info(f"✅ Comprehensive analysis completed for {len(all_parcels_with_slopes)} parcels")
+            all_parcels_with_slopes = clean_dataframe_for_json(all_parcels_with_slopes)
 
         except Exception as e:
             logger.error(f"Comprehensive slope analysis failed: {e}")
@@ -548,6 +590,7 @@ def create_slope_grid_infrastructure(client: bigquery.Client, project_id: str, d
 def create_demo_slope_grid(client: bigquery.Client, table_id: str, bounds) -> bool:
     """Create demo slope grid data for testing purposes."""
     try:
+        set_deterministic_seed()
         logger.info("Creating demo slope grid data for analysis region")
 
         # Use WGS84 bounds (not Web Mercator)
@@ -1316,6 +1359,7 @@ def generate_comprehensive_fallback_results(parcel_gdf: gpd.GeoDataFrame,
     """
     Generate comprehensive fallback slope analysis results that include ALL parcels
     """
+    set_deterministic_seed()
     import random
 
     logger.info(f"Generating comprehensive fallback slope analysis results")
@@ -1429,6 +1473,7 @@ def create_region_demo_slope_grid(client: bigquery.Client, table_id: str, bounds
     Create demo slope grid data for a specific region
     """
     try:
+        set_deterministic_seed()
         logger.info("Creating demo slope grid data for analysis region")
 
         # Ensure the table exists first
