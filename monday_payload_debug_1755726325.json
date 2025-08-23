@@ -1,0 +1,26 @@
+{
+  "board_id": "9832625838",
+  "group_id": "group_mkv0ca44",
+  "item_name": "Bd OF Park Commissioners",
+  "column_values_dict": {
+    "text4": "Cuyahoga",
+    "text_1": "OH",
+    "numbers85__1": 0,
+    "mzip": "00000",
+    "text117": "39626001",
+    "numbers6": 514.86,
+    "dup__of_score__0___3___1": 0,
+    "numeric_mktwrwry": "0",
+    "long_text__1": "{}"
+  },
+  "column_values_json": "{\"text4\": \"Cuyahoga\", \"text_1\": \"OH\", \"numbers85__1\": 0, \"mzip\": \"00000\", \"text117\": \"39626001\", \"numbers6\": 514.86, \"dup__of_score__0___3___1\": 0, \"numeric_mktwrwry\": \"0\", \"long_text__1\": \"{}\"}",
+  "full_payload": {
+    "query": "\n                mutation ($boardId: ID!, $groupId: String!, $itemName: String!, $columnValues: JSON!) {\n                    create_item (\n                        board_id: $boardId,\n                        group_id: $groupId,\n                        item_name: $itemName,\n                        column_values: $columnValues\n                    ) {\n                        id\n                        name\n                    }\n                }\n            ",
+    "variables": {
+      "boardId": "9832625838",
+      "groupId": "group_mkv0ca44",
+      "itemName": "Bd OF Park Commissioners",
+      "columnValues": "{\"text4\": \"Cuyahoga\", \"text_1\": \"OH\", \"numbers85__1\": 0, \"mzip\": \"00000\", \"text117\": \"39626001\", \"numbers6\": 514.86, \"dup__of_score__0___3___1\": 0, \"numeric_mktwrwry\": \"0\", \"long_text__1\": \"{}\"}"
+    }
+  }
+}

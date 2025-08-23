@@ -797,6 +797,9 @@ class ProjectWorkflow {
         this.tierInfo = null;
         this.currentAnalysis = null;
         this.currentParcelResults = null;
+        // Explicitly bind the ML analysis method
+        this.analyzeParcelSuitability = this.analyzeParcelSuitability.bind(this);
+        console.log('✅ analyzeParcelSuitability method bound to workflow');
     }
 
     async initialize() {
@@ -1027,6 +1030,27 @@ class ProjectWorkflow {
                 </div>
             </div>
         `;
+    }
+
+    // Add this method to test the ML analysis manually
+    testMLAnalysis() {
+        console.log('🧪 MANUAL ML ANALYSIS TEST');
+
+        if (!this.currentParcelResults || !this.currentParcelResults.parcel_data) {
+            console.error('❌ No parcel data available for test');
+            alert('No parcel data available. Please complete a parcel search first.');
+            return;
+        }
+
+        console.log('✅ Parcel data available:', this.currentParcelResults.parcel_data.length, 'parcels');
+
+        // Call the analysis method directly
+        try {
+            this.analyzeParcelSuitability();
+        } catch (error) {
+            console.error('❌ Manual test failed:', error);
+            alert('Manual test failed: ' + error.message);
+        }
     }
 
     getStateOptions() {
@@ -1859,6 +1883,9 @@ class ProjectWorkflow {
                                 🔬 Analyze Parcel Suitability
                             </button>
                             <small class="text-muted d-block mt-2">Get AI analysis of parcel characteristics for renewable energy</small>
+                               <button class="btn btn-info btn-sm" onclick="workflow.testOutreachTracking()">
+                                   🧪 Test BigQuery Tracking
+                               </button>
                         </div>
                         <div class="col-md-6">
                             <button class="btn btn-info w-100" onclick="workflow.generateSiteReport('${data.search_id || 'none'}')" ${recordCount === 0 ? 'disabled' : ''}>
@@ -1975,80 +2002,272 @@ class ProjectWorkflow {
     }
 
     attachSuitabilityButtonHandler() {
+        console.log('🔗 Attaching suitability button handler...');
+
         setTimeout(() => {
             const analyzeButton = document.getElementById('analyze-suitability-btn');
+            console.log('Button found for attachment:', !!analyzeButton);
+
             if (analyzeButton) {
+                // Remove any existing event listeners
                 analyzeButton.removeEventListener('click', this.analyzeParcelSuitability.bind(this));
-                analyzeButton.addEventListener('click', this.analyzeParcelSuitability.bind(this));
-                console.log('Suitability analysis button handler attached');
+                analyzeButton.onclick = null; // Clear any onclick handlers
+
+                // Add new event listener
+                const boundHandler = this.analyzeParcelSuitability.bind(this);
+                analyzeButton.addEventListener('click', boundHandler);
+
+                console.log('✅ ML analysis button handler attached successfully');
+
+                // Also add onclick as backup
+                analyzeButton.onclick = (e) => {
+                    e.preventDefault();
+                    console.log('🖱️ Button clicked via onclick handler');
+                    this.analyzeParcelSuitability();
+                };
+
+                // Test the button
+                console.log('Button ready for testing. Click state:', {
+                    disabled: analyzeButton.disabled,
+                    textContent: analyzeButton.textContent,
+                    hasEventListener: true
+                });
+
             } else {
-                console.error('Analyze suitability button not found');
+                console.error('❌ Analyze suitability button not found in DOM');
             }
-        }, 100);
+        }, 500); // Increased delay to ensure DOM is ready
+    }
+
+    // Add these helper methods
+    showMLParcelDetails(parcelId) {
+        const parcel = this.currentMLResults.parcels.find(p => p.parcel_id === parcelId);
+        if (!parcel) return;
+
+        const analysis = parcel.suitability_analysis;
+
+        const modalHtml = `
+            <div class="modal fade" id="mlParcelDetailsModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">🧠 ML Analysis: ${parcel.parcel_id}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Basic Information</h6>
+                                    <p><strong>Parcel ID:</strong> ${parcel.parcel_id}</p>
+                                    <p><strong>Owner:</strong> ${parcel.owner}</p>
+                                    <p><strong>Acreage:</strong> ${parseFloat(parcel.acreage || 0).toFixed(1)} acres</p>
+                                    <p><strong>Location:</strong> ${parcel.county}, ${parcel.state_abbr}</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>ML Analysis Scores</h6>
+                                    <p><strong>ML Score:</strong> ${analysis.ml_score || 'N/A'}/100</p>
+                                    <p><strong>Traditional Score:</strong> ${analysis.traditional_score || 'N/A'}/100</p>
+                                    <p><strong>Combined Score:</strong> ${analysis.overall_score || 'N/A'}/100</p>
+                                    <p><strong>Confidence:</strong> ${analysis.confidence_level || 'Medium'}</p>
+                                    <p><strong>Recommendation:</strong> ${analysis.is_suitable ? '✓ Recommended' : '✗ Not Recommended'}</p>
+                                </div>
+                            </div>
+                            <hr>
+                            <h6>Analysis Notes</h6>
+                            <p>${analysis.analysis_notes || 'No additional notes available.'}</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-info" onclick="workflow.rateParcel('${parcel.parcel_id}')">
+                                Provide Feedback
+                            </button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('mlParcelDetailsModal'));
+        modal.show();
+    }
+
+    async rateParcel(parcelId) {
+        const parcel = this.currentMLResults.parcels.find(p => p.parcel_id === parcelId);
+        if (!parcel) return;
+
+        const analysis = parcel.suitability_analysis;
+        const rating = prompt(`Rate this parcel recommendation (1-100):
+
+    Parcel: ${parcel.parcel_id}
+    Owner: ${parcel.owner}
+    ML Score: ${analysis.ml_score || 'N/A'}
+    Combined Score: ${analysis.overall_score || 'N/A'}
+
+    Your rating (1-100):`);
+
+        if (rating && !isNaN(rating) && rating >= 1 && rating <= 100) {
+            try {
+                const response = await fetch('/api/parcel/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        parcel_id: parcelId,
+                        user_rating: parseInt(rating),
+                        feedback_type: rating > 70 ? 'interested' : 'not_interested',
+                        notes: `User rating: ${rating}/100 for ML score: ${analysis.ml_score}`
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    alert(`✅ Feedback saved! Your rating will help improve future ML recommendations.`);
+                } else {
+                    alert(`❌ Failed to save feedback: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error saving feedback: ${error.message}`);
+            }
+        }
+    }
+
+    exportMLRecommendations() {
+        if (!this.currentMLResults) {
+            alert('No ML results to export');
+            return;
+        }
+
+        const parcels = this.currentMLResults.parcels;
+        const headers = ['Parcel ID', 'Owner', 'Acres', 'ML Score', 'Traditional Score', 'Combined Score', 'ML Recommended', 'Analysis Notes'];
+
+        let csvContent = headers.join(',') + '\n';
+        parcels.forEach(parcel => {
+            const analysis = parcel.suitability_analysis;
+            const row = [
+                parcel.parcel_id,
+                `"${parcel.owner}"`,
+                parseFloat(parcel.acreage || 0).toFixed(1),
+                analysis.ml_score || 'N/A',
+                analysis.traditional_score || 'N/A',
+                analysis.overall_score || 'N/A',
+                analysis.is_suitable ? 'Yes' : 'No',
+                `"${analysis.analysis_notes || ''}"`
+            ];
+            csvContent += row.join(',') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ml_parcel_recommendations_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+
+    provideFeedback() {
+        alert('Use the "Rate" button next to each parcel to provide individual feedback, or select multiple parcels and use batch feedback (coming soon).');
     }
 
     async analyzeParcelSuitability() {
+        console.log('🚀 ANALYZE PARCEL SUITABILITY CALLED');
+
         const button = document.getElementById('analyze-suitability-btn');
         const originalText = button.textContent;
 
         try {
             button.disabled = true;
-            button.textContent = 'Analyzing Parcels...';
-
-            // Show progress indicator
+            button.textContent = '🧠 Running ML Analysis...';
             this.showAnalysisProgress();
 
-            console.log('Starting parcel suitability analysis...');
+            let parcelData = this.currentParcelResults?.parcel_data || [];
+            console.log('📊 Request data preparation:', {
+                parcelCount: parcelData.length,
+                sampleParcel: parcelData[0],
+                projectType: this.currentAnalysis?.project_type
+            });
 
-            // Get parcel data - prioritize direct data from search results
-            let parcelData = [];
+            const requestData = {
+                parcels: parcelData,
+                search_results: this.currentParcelResults,
+                project_type: this.currentAnalysis?.project_type || 'solar',
+                analysis_type: 'ml_enhanced'
+            };
 
-            if (this.currentParcelResults && this.currentParcelResults.parcel_data) {
-                parcelData = this.currentParcelResults.parcel_data;
-                console.log(`Using direct parcel data: ${parcelData.length} parcels`);
-            } else {
-                throw new Error('No parcel data available for analysis. Please ensure you have completed a parcel search first.');
-            }
+            console.log('📤 Sending ML request:', requestData);
 
-            if (!parcelData || parcelData.length === 0) {
-                throw new Error('No parcel data available for analysis.');
-            }
-
-            console.log(`Starting analysis of ${parcelData.length} parcels`);
-
-            const response = await fetch('/api/parcel/analyze_suitability', {
+            const response = await fetch('/api/parcel/analyze_suitability_with_ml', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    parcels: parcelData,
-                    search_results: this.currentParcelResults,  // Add this line
-                    project_type: this.currentAnalysis.project_type,
-                    analysis_type: 'renewable_energy_suitability'
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestData)
+            });
+
+            console.log('📥 Response received:', {
+                status: response.status,
+                ok: response.ok,
+                headers: Object.fromEntries(response.headers.entries())
             });
 
             if (!response.ok) {
-                throw new Error(`Analysis failed: HTTP ${response.status}`);
+                const errorText = await response.text();
+                console.error('❌ HTTP Error:', errorText);
+                throw new Error(`Analysis failed: HTTP ${response.status} - ${errorText}`);
             }
 
             const result = await response.json();
+            console.log('📋 COMPLETE RESPONSE OBJECT:', result);
+            console.log('📋 Response keys:', Object.keys(result));
+            console.log('📋 Response status:', result.status);
+            console.log('📋 Response data:', result.data);
 
             if (result.status === 'success') {
-                console.log('Analysis completed successfully');
-                this.displaySuitabilityResults(result.data);
+                console.log('✅ Success path - checking data structure...');
+
+                if (result.data) {
+                    console.log('📊 Data object keys:', Object.keys(result.data));
+                    console.log('📊 Total parcels:', result.data.total_parcels);
+                    console.log('📊 Suitable parcels:', result.data.suitable_parcels);
+                    console.log('📊 Parcels array:', result.data.parcels);
+                    console.log('📊 Parcels array length:', result.data.parcels?.length);
+                    console.log('📊 First parcel sample:', result.data.parcels?.[0]);
+
+                    if (result.data.parcels && result.data.parcels.length > 0) {
+                        console.log('🎯 About to call displayMLSuitabilityResults...');
+
+                        // Check if the method exists
+                        if (typeof this.displayMLSuitabilityResults === 'function') {
+                            console.log('✅ Display method exists, calling it...');
+                            this.displayMLSuitabilityResults(result.data);
+                            console.log('✅ Display method called successfully');
+                        } else {
+                            console.error('❌ Display method does not exist!');
+                            console.log('Available methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(this)));
+                            alert('Display method missing! Check console.');
+                        }
+                    } else {
+                        console.error('❌ No parcels in response data');
+                        alert('No parcels returned from analysis');
+                    }
+                } else {
+                    console.error('❌ No data object in response');
+                    alert('Invalid response format - missing data');
+                }
             } else {
-                throw new Error(result.error || 'Analysis failed');
+                console.error('❌ Analysis failed:', result.error || 'Unknown error');
+                throw new Error(result.error || 'ML analysis failed');
             }
 
         } catch (error) {
-            console.error('Suitability analysis failed:', error);
-            this.showErrorMessage(`Analysis failed: ${error.message}`);
+            console.error('❌ ML analysis exception:', error);
+            console.error('❌ Error stack:', error.stack);
+            this.showErrorMessage(`ML Analysis failed: ${error.message}`);
         } finally {
             button.disabled = false;
             button.textContent = originalText;
             this.hideAnalysisProgress();
+            console.log('🏁 Analysis method completed');
         }
     }
 
@@ -2233,31 +2452,6 @@ class ProjectWorkflow {
         });
 
         this.updateSelectionCount();
-    }
-
-    updateSelectionCount() {
-        const selectedCheckboxes = document.querySelectorAll('.parcel-checkbox:checked');
-        const count = selectedCheckboxes.length;
-
-        const countElement = document.getElementById('selection-count');
-        if (countElement) {
-            countElement.textContent = count;
-        }
-
-        const outreachBtn = document.getElementById('initiate-outreach-btn');
-        if (outreachBtn) {
-            outreachBtn.disabled = count === 0;
-        }
-
-        // Add event listeners for checkboxes
-        setTimeout(() => {
-            const parcelCheckboxes = document.querySelectorAll('.parcel-checkbox');
-            parcelCheckboxes.forEach(checkbox => {
-                checkbox.addEventListener('change', () => {
-                    this.updateSelectionCount();
-                });
-            });
-        }, 100);
     }
 
     selectSuitableParcels() {
@@ -2698,6 +2892,1216 @@ formatTransmissionInfo(analysis) {
         modal.show();
     }
 
+    displayMLSuitabilityResults(data) {
+        console.log('🖥️ displayMLSuitabilityResults called with:', data);
+
+        const container = document.getElementById('workflow-container');
+
+        const resultDate = new Date().toLocaleDateString('en-US', {
+            year: 'numeric', month: 'long', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+
+        const html = `
+            <div class="suitability-results-container">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h4>🧠 ML-Enhanced Parcel Analysis Results</h4>
+                        <div>
+                            <button class="btn btn-sm btn-outline-info me-2" onclick="workflow.showScoringMethodology()">
+                                ❓ How Scores Work
+                            </button>
+                            <small class="text-muted">Generated: ${resultDate}</small>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Summary Statistics -->
+                        <div class="suitability-summary">
+                            <h5>📊 ML Analysis Summary</h5>
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <h3 class="text-primary">${data.total_parcels}</h3>
+                                            <p class="card-text">Total Parcels</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <h3 class="text-success">${data.suitable_parcels}</h3>
+                                            <p class="card-text">ML Recommended</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <h3 class="text-info">${Math.round((data.suitable_parcels / data.total_parcels) * 100)}%</h3>
+                                            <p class="card-text">Recommendation Rate</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <h3 class="text-warning">🤖+📊</h3>
+                                            <p class="card-text">ML + Traditional</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Selection and Action Controls -->
+                        <div class="row mt-4 mb-3">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="select-all-ml-parcels" onchange="workflow.toggleAllParcels(this.checked)">
+                                    <label class="form-check-label" for="select-all-ml-parcels">
+                                        <strong>Select All Recommended Parcels</strong>
+                                    </label>
+                                </div>
+                                <small class="text-muted">Selected: <span id="selected-count">0</span> parcels</small>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <button class="btn btn-success btn-lg" id="initiate-outreach-btn" onclick="workflow.initiateMLOutreach()" disabled>
+                                    📧 Initiate Outreach <span class="badge bg-light text-dark" id="outreach-count">0</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Enhanced Results Table -->
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover table-sm" id="ml-suitability-table">
+                                // In the displayMLSuitabilityResults method, replace the table header section:
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th width="3%">
+                                            <input type="checkbox" class="form-check-input" id="header-select-all" onchange="workflow.toggleAllParcels(this.checked)">
+                                        </th>
+                                        <th>Parcel ID</th>
+                                        <th>Owner</th>
+                                        <th>Acres</th>
+                                        <th title="Slope in degrees - Lower is better">
+                                            🏔️ Slope
+                                        </th>
+                                        <th title="Distance to transmission lines">
+                                            ⚡ Transmission
+                                        </th>
+                                        <th title="AI/ML predicted score based on multiple factors">
+                                            🤖 ML Score
+                                        </th>
+                                        <th title="Traditional analysis score (slope + transmission)">
+                                            📊 Traditional
+                                        </th>
+                                        <th title="Combined score: 60% ML + 40% Traditional">
+                                            🎯 Combined
+                                        </th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                        <th width="15%" title="Select reason when excluding parcels from outreach">
+                                            🚫 Why Not?
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${this.generateMLTableRows(data.parcels || [])}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Legend -->
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <h6>🏔️ Slope Legend:</h6>
+                                <span class="badge bg-success me-1">≤5°</span> Excellent
+                                <span class="badge bg-warning me-1 ms-2">5-15°</span> Good
+                                <span class="badge bg-danger me-1 ms-2">>15°</span> Challenging
+                            </div>
+                            <div class="col-md-6">
+                                <h6>⚡ Transmission Legend:</h6>
+                                <span class="badge bg-success me-1">≤0.5mi</span> Very Close
+                                <span class="badge bg-warning me-1 ms-2">0.5-1mi</span> Close
+                                <span class="badge bg-danger me-1 ms-2">>1mi</span> Far
+                            </div>
+                        </div>
+
+                        <!-- Back Button -->
+                        <div class="mt-4">
+                            <button class="btn btn-secondary" onclick="workflow.showParcelSearchInterface()">
+                                ← Back to Parcel Search
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        container.innerHTML = html;
+        this.currentMLResults = data;
+        container.scrollIntoView({ behavior: 'smooth' });
+
+        // Attach event listeners for checkboxes
+        this.attachMLCheckboxListeners();
+
+        console.log('✅ ML results displayed successfully');
+    }
+
+    generateMLTableRows(parcels) {
+        if (!Array.isArray(parcels)) {
+            return '<tr><td colspan="12" class="text-center text-danger">No parcel data available</td></tr>';
+        }
+
+        return parcels.map((parcel, index) => {
+            const analysis = parcel.suitability_analysis || {};
+            const mlAnalysis = parcel.ml_analysis || {};
+
+            // Get scores with fallbacks
+            const mlScore = mlAnalysis.predicted_score || 'N/A';
+            const traditionalScore = analysis.traditional_score || analysis.overall_score || 'N/A';
+            const combinedScore = analysis.overall_score || 'N/A';
+
+            // Get slope and transmission info
+            const slopeInfo = analysis.slope_degrees || parcel.slope_degrees || 'Unknown';
+            const transmissionDistance = analysis.transmission_distance || parcel.transmission_distance || 'Unknown';
+            const transmissionVoltage = analysis.transmission_voltage || parcel.transmission_voltage || 'Unknown';
+
+            // Create badges
+            const mlBadge = mlScore !== 'N/A' && mlScore >= 70 ?
+                `<span class="badge bg-success">${mlScore}</span>` :
+                mlScore !== 'N/A' ? `<span class="badge bg-warning">${mlScore}</span>` :
+                `<span class="badge bg-secondary">N/A</span>`;
+
+            const combinedBadge = combinedScore !== 'N/A' && combinedScore >= 70 ?
+                `<span class="badge bg-primary">${combinedScore}</span>` :
+                combinedScore !== 'N/A' ? `<span class="badge bg-secondary">${combinedScore}</span>` :
+                `<span class="badge bg-secondary">N/A</span>`;
+
+            // Enhanced slope badge with color coding
+            let slopeBadge = `<span class="badge bg-secondary">${slopeInfo}</span>`;
+            if (slopeInfo !== 'Unknown') {
+                const slope = parseFloat(slopeInfo);
+                if (slope <= 5) slopeBadge = `<span class="badge bg-success">${slope}°</span>`;
+                else if (slope <= 15) slopeBadge = `<span class="badge bg-warning">${slope}°</span>`;
+                else slopeBadge = `<span class="badge bg-danger">${slope}°</span>`;
+            }
+
+            // Enhanced transmission badge
+            let transmissionBadge = `<span class="badge bg-secondary">Unknown</span>`;
+            if (transmissionDistance !== 'Unknown') {
+                const distance = parseFloat(transmissionDistance);
+                const voltage = transmissionVoltage !== 'Unknown' ? `${transmissionVoltage}kV` : '';
+                if (distance <= 0.5) transmissionBadge = `<span class="badge bg-success" title="${voltage}">${distance.toFixed(2)}mi</span>`;
+                else if (distance <= 1.0) transmissionBadge = `<span class="badge bg-warning" title="${voltage}">${distance.toFixed(2)}mi</span>`;
+                else transmissionBadge = `<span class="badge bg-danger" title="${voltage}">${distance.toFixed(2)}mi</span>`;
+            }
+
+            const isRecommended = analysis.is_suitable || false;
+            const statusBadge = isRecommended ?
+                '<span class="badge bg-success">✓ Recommended</span>' :
+                '<span class="badge bg-danger">✗ Not Recommended</span>';
+
+            // Determine primary disqualifying factor for pre-population
+            const primaryReason = this.determinePrimaryDisqualifyingFactor(parcel);
+
+            return `
+                <tr class="${isRecommended ? 'table-success' : ''}" data-parcel-index="${index}" id="parcel-row-${index}">
+                    <td>
+                        <input type="checkbox" class="form-check-input ml-parcel-checkbox"
+                               value="${parcel.parcel_id}"
+                               data-parcel-index="${index}"
+                               data-is-recommended="${isRecommended}"
+                               ${isRecommended ? 'checked' : ''}
+                               onchange="workflow.handleParcelSelection(${index})">
+                    </td>
+                    <td><strong>${parcel.parcel_id}</strong></td>
+                    <td>${this.truncateText(parcel.owner || 'Unknown', 25)}</td>
+                    <td>${parseFloat(parcel.acreage || parcel.acreage_calc || 0).toFixed(1)}</td>
+                    <td>${slopeBadge}</td>
+                    <td>${transmissionBadge}</td>
+                    <td>${mlBadge}</td>
+                    <td><span class="badge bg-info">${traditionalScore}</span></td>
+                    <td>${combinedBadge}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="workflow.showMLParcelDetails('${parcel.parcel_id}')">
+                            Details
+                        </button>
+                    </td>
+                    <td>
+                        <!-- Why Not? Dropdown -->
+                        <select class="form-select form-select-sm why-not-dropdown"
+                                id="why-not-${index}"
+                                data-parcel-id="${parcel.parcel_id}"
+                                data-parcel-index="${index}"
+                                ${isRecommended ? 'disabled' : ''}
+                                onchange="workflow.recordParcelExclusion(${index})"
+                                style="min-width: 150px;">
+                            <option value="">Select reason...</option>
+                            ${this.createExclusionOptions(isRecommended, primaryReason)}
+                        </select>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    determinePrimaryDisqualifyingFactor(parcel) {
+        /**
+         * Analyze parcel data to determine the primary reason it's not suitable
+         */
+        const analysis = parcel.suitability_analysis || {};
+        const slope = parseFloat(analysis.slope_degrees || parcel.slope_degrees || 0);
+        const transmissionDistance = parseFloat(analysis.transmission_distance || parcel.transmission_distance || 0);
+        const acreage = parseFloat(parcel.acreage_calc || parcel.acreage || 0);
+        const owner = String(parcel.owner || '').toUpperCase();
+        const landUse = String(parcel.land_use_class || '').toUpperCase();
+        const floodZone = String(parcel.fld_zone || '');
+
+        // Priority order of disqualifying factors
+        if (slope > 20) {
+            return 'slope_too_steep';
+        } else if (slope > 15) {
+            return 'slope_challenging';
+        } else if (transmissionDistance > 2.0) {
+            return 'transmission_too_far';
+        } else if (transmissionDistance > 1.0) {
+            return 'transmission_distance';
+        } else if (acreage < 10) {
+            return 'parcel_too_small';
+        } else if (owner.includes('CITY') || owner.includes('COUNTY') || owner.includes('STATE')) {
+            return 'public_lands';
+        } else if (landUse.includes('CONSERVATION') || landUse.includes('PARK')) {
+            return 'conservation_area';
+        } else if (floodZone && floodZone !== 'X' && floodZone !== 'null') {
+            return 'flood_risk';
+        }
+
+        return 'multiple_factors';
+    }
+
+    createExclusionOptions(isRecommended, primaryReason) {
+        /**
+         * Create dropdown options for why parcels are excluded
+         */
+        let options = '';
+
+        if (!isRecommended) {
+            // For NOT recommended parcels - show analysis-based reasons
+            const reasonMap = {
+                'slope_too_steep': 'Slope too steep (>20°)',
+                'slope_challenging': 'Slope challenging (15-20°)',
+                'transmission_too_far': 'Transmission too far (>2mi)',
+                'transmission_distance': 'Transmission distance concerns',
+                'parcel_too_small': 'Parcel too small',
+                'public_lands': 'Public/government lands',
+                'conservation_area': 'Conservation/protected area',
+                'flood_risk': 'Flood zone concerns',
+                'multiple_factors': 'Multiple limiting factors'
+            };
+
+            // Pre-select the primary reason
+            const primaryReasonText = reasonMap[primaryReason] || 'Analysis determined unsuitable';
+            options += `<option value="${primaryReason}" selected>${primaryReasonText}</option>`;
+
+            // Add other possible reasons
+            Object.entries(reasonMap).forEach(([key, text]) => {
+                if (key !== primaryReason) {
+                    options += `<option value="${key}">${text}</option>`;
+                }
+            });
+
+            // Add override option
+            options += `<option value="override_analysis">Override - Include anyway</option>`;
+
+        } else {
+            // For RECOMMENDED parcels - user chooses why they're excluding
+            options += `
+                <option value="slope_concerns">Slope concerns</option>
+                <option value="transmission_access">Transmission access</option>
+                <option value="transmission_capacity">Transmission capacity issues</option>
+                <option value="parcel_size_pref">Parcel size preference</option>
+                <option value="parcel_configuration">Parcel configuration</option>
+                <option value="flood_concerns">Flood concerns</option>
+                <option value="environmental_buffer">Environmental buffer needed</option>
+                <option value="owner_access_issues">Owner/access concerns</option>
+                <option value="market_timing">Market timing</option>
+                <option value="portfolio_balance">Portfolio balance</option>
+                <option value="already_contacted">Already contacted owner</option>
+                <option value="location_priority">Location not priority</option>
+                <option value="risk_assessment">Risk too high</option>
+                <option value="resource_constraints">Resource constraints</option>
+                <option value="competitor_presence">Competitor presence</option>
+            `;
+        }
+
+        return options;
+    }
+
+    handleParcelSelection(parcelIndex) {
+        /**
+         * Handle when a parcel checkbox is checked/unchecked
+         */
+        const checkbox = document.querySelector(`input[data-parcel-index="${parcelIndex}"]`);
+        const dropdown = document.getElementById(`why-not-${parcelIndex}`);
+        const row = document.getElementById(`parcel-row-${parcelIndex}`);
+
+        if (checkbox && dropdown) {
+            if (checkbox.checked) {
+                // Parcel selected for outreach - disable dropdown and clear selection
+                dropdown.disabled = true;
+                dropdown.value = '';
+                dropdown.style.opacity = '0.5';
+                row.classList.add('table-primary');
+
+            } else {
+                // Parcel NOT selected - enable dropdown
+                dropdown.disabled = false;
+                dropdown.style.opacity = '1.0';
+                row.classList.remove('table-primary');
+
+                // If it's a recommended parcel, prompt user to select reason
+                const isRecommended = checkbox.getAttribute('data-is-recommended') === 'true';
+                if (isRecommended && !dropdown.value) {
+                    setTimeout(() => {
+                        dropdown.focus();
+                        dropdown.style.borderColor = '#ffc107';
+                        setTimeout(() => {
+                            dropdown.style.borderColor = '';
+                        }, 3000);
+                    }, 100);
+                }
+            }
+        }
+
+        // Update selection count
+        this.updateSelectionCount();
+    }
+
+    async recordParcelExclusion(parcelIndex) {
+        /**
+         * Record why a parcel is excluded from outreach
+         */
+        try {
+            const dropdown = document.getElementById(`why-not-${parcelIndex}`);
+            const parcelId = dropdown.getAttribute('data-parcel-id');
+            const exclusionReason = dropdown.value;
+
+            if (!exclusionReason) {
+                return;
+            }
+
+            console.log(`📝 Recording exclusion: ${parcelId} - ${exclusionReason}`);
+
+            // Get parcel data
+            const parcel = this.currentMLResults.parcels[parcelIndex];
+            const isRecommended = parcel.suitability_analysis?.is_suitable || parcel.is_suitable || false;
+
+            // Special handling for override
+            if (exclusionReason === 'override_analysis') {
+                const confirmed = confirm(`Override analysis and include ${parcelId} in outreach?\n\nThis parcel was flagged as unsuitable by our analysis.`);
+                if (confirmed) {
+                    // Check the checkbox to include in outreach
+                    const checkbox = document.querySelector(`input[data-parcel-index="${parcelIndex}"]`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                        this.handleParcelSelection(parcelIndex);
+                    }
+                    exclusionReason = 'analysis_override';
+                } else {
+                    dropdown.value = '';
+                    return;
+                }
+            }
+
+            // Prepare feedback data
+            const feedbackData = {
+                parcel_id: parcelId,
+                exclusion_reason: exclusionReason,
+                is_recommended: isRecommended,
+                parcel_data: parcel,
+                project_type: this.currentAnalysis?.project_type || 'solar',
+                location: this.currentAnalysis?.location || 'Unknown',
+                feedback_timestamp: new Date().toISOString()
+            };
+
+            // Send to backend
+            const response = await fetch('/api/record-parcel-exclusion', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(feedbackData)
+            });
+
+            if (response.ok) {
+                console.log(`✅ Exclusion recorded for parcel ${parcelId}`);
+
+                // Visual feedback
+                dropdown.style.borderColor = '#28a745';
+                setTimeout(() => {
+                    dropdown.style.borderColor = '';
+                }, 2000);
+
+            } else {
+                console.error(`❌ Failed to record exclusion for parcel ${parcelId}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Error recording parcel exclusion:', error);
+        }
+    }
+
+    updateSelectionCount() {
+        /**
+         * Update selection count and button states - ENHANCED
+         */
+        const checkboxes = document.querySelectorAll('.ml-parcel-checkbox:checked');
+        const count = checkboxes.length;
+
+        // Update count displays
+        const selectedCountElement = document.getElementById('selected-count');
+        const outreachCountElement = document.getElementById('outreach-count');
+
+        if (selectedCountElement) selectedCountElement.textContent = count;
+        if (outreachCountElement) outreachCountElement.textContent = count;
+
+        // Enable/disable outreach button
+        const outreachBtn = document.getElementById('initiate-outreach-btn');
+        if (outreachBtn) {
+            outreachBtn.disabled = count === 0;
+        }
+
+        // Update header checkbox states
+        const allCheckboxes = document.querySelectorAll('.ml-parcel-checkbox');
+        const headerCheckboxes = ['select-all-ml-parcels', 'header-select-all'];
+
+        headerCheckboxes.forEach(id => {
+            const headerCheckbox = document.getElementById(id);
+            if (headerCheckbox) {
+                headerCheckbox.checked = count === allCheckboxes.length && count > 0;
+                headerCheckbox.indeterminate = count > 0 && count < allCheckboxes.length;
+            }
+        });
+
+        // Update the "Select All Recommended Parcels" checkbox text and function
+        const selectAllLabel = document.querySelector('label[for="select-all-ml-parcels"]');
+        if (selectAllLabel) {
+            const recommendedCount = document.querySelectorAll('.ml-parcel-checkbox[data-is-recommended="true"]').length;
+            selectAllLabel.innerHTML = `<strong>Select All Recommended Parcels (${recommendedCount})</strong>`;
+        }
+    }
+
+    createFeedbackOptions(isRecommended, primaryReason) {
+        /**
+         * Create dropdown options based on whether parcel is recommended and primary issue
+         */
+        let options = '';
+
+        if (!isRecommended) {
+            // For NOT recommended parcels - pre-populate with primary reason
+            const reasonMap = {
+                'slope_too_steep': 'Slope too steep (>20°)',
+                'slope_challenging': 'Slope challenging (15-20°)',
+                'transmission_too_far': 'Transmission too far (>2mi)',
+                'transmission_distance': 'Transmission distance (1-2mi)',
+                'parcel_too_small': 'Parcel too small (<10 acres)',
+                'parcel_too_large': 'Parcel too large (>10,000 acres)',
+                'public_lands': 'Public/government lands',
+                'conservation_area': 'Conservation/protected area',
+                'flood_risk': 'Flood zone concerns',
+                'low_ml_confidence': 'Low AI confidence',
+                'multiple_factors': 'Multiple limiting factors'
+            };
+
+            // Pre-select the primary reason
+            const primaryReasonText = reasonMap[primaryReason] || 'Analysis determined unsuitable';
+            options += `<option value="${primaryReason}" selected>${primaryReasonText}</option>`;
+
+            // Add other possible reasons (not selected)
+            Object.entries(reasonMap).forEach(([key, text]) => {
+                if (key !== primaryReason) {
+                    options += `<option value="${key}">${text}</option>`;
+                }
+            });
+
+            // Add override option
+            options += `<option value="override_analysis">Override - Actually interested</option>`;
+
+        } else {
+            // For RECOMMENDED parcels - user chooses why they didn't select
+            options += `
+                <option value="slope_preference">Slope concerns</option>
+                <option value="transmission_access">Transmission access</option>
+                <option value="transmission_capacity">Transmission capacity</option>
+                <option value="parcel_size">Parcel size</option>
+                <option value="parcel_configuration">Parcel configuration</option>
+                <option value="flood_concerns">Flood concerns</option>
+                <option value="conservation_buffer">Too close to conservation</option>
+                <option value="public_lands_nearby">Near public lands</option>
+                <option value="owner_concerns">Owner/access concerns</option>
+                <option value="market_timing">Market timing</option>
+                <option value="portfolio_balance">Portfolio balance</option>
+                <option value="already_contacted">Already contacted</option>
+                <option value="location_preference">Location preference</option>
+                <option value="risk_assessment">Risk assessment</option>
+            `;
+        }
+
+        return options;
+    }
+
+    async recordParcelFeedback(parcelIndex) {
+        /**
+         * Record feedback for a specific parcel
+         */
+        try {
+            const selectElement = document.getElementById(`feedback-select-${parcelIndex}`);
+            const customElement = document.getElementById(`feedback-custom-${parcelIndex}`);
+            const parcelId = selectElement.getAttribute('data-parcel-id');
+
+            const selectedReason = selectElement.value;
+            const customReason = customElement.value.trim();
+
+            if (!selectedReason && !customReason) {
+                return; // No feedback provided yet
+            }
+
+            // Get parcel data
+            const parcel = this.currentMLResults.parcels[parcelIndex];
+
+            // Prepare feedback data
+            const feedbackData = {
+                parcel_id: parcelId,
+                parcel_index: parcelIndex,
+                selected_reason: selectedReason,
+                custom_reason: customReason,
+                parcel_data: parcel,
+                project_type: this.currentAnalysis?.project_type || 'solar',
+                location: this.currentAnalysis?.location || 'Unknown',
+                is_recommended: parcel.suitability_analysis?.is_suitable || parcel.is_suitable || false,
+                feedback_timestamp: new Date().toISOString()
+            };
+
+            console.log(`📝 Recording feedback for parcel ${parcelId}:`, feedbackData);
+
+            // Send to backend
+            const response = await fetch('/api/record-parcel-feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(feedbackData)
+            });
+
+            if (response.ok) {
+                console.log(`✅ Feedback recorded for parcel ${parcelId}`);
+
+                // Visual feedback
+                selectElement.style.borderColor = '#28a745';
+                setTimeout(() => {
+                    selectElement.style.borderColor = '';
+                }, 2000);
+
+            } else {
+                console.error(`❌ Failed to record feedback for parcel ${parcelId}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Error recording parcel feedback:', error);
+        }
+    }
+
+    clearParcelFeedback(parcelIndex) {
+        /**
+         * Clear feedback when parcel is selected for outreach
+         */
+        const selectElement = document.getElementById(`feedback-select-${parcelIndex}`);
+        const customElement = document.getElementById(`feedback-custom-${parcelIndex}`);
+
+        if (selectElement) selectElement.value = '';
+        if (customElement) customElement.value = '';
+    }
+
+    async initiateMLOutreach() {
+        /**
+         * SIMPLIFIED outreach without complex feedback modal
+         */
+        try {
+            const selectedCheckboxes = document.querySelectorAll('.ml-parcel-checkbox:checked');
+
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select at least one parcel for outreach.');
+                return;
+            }
+
+            const selectedParcels = Array.from(selectedCheckboxes).map(cb => {
+                const index = parseInt(cb.getAttribute('data-parcel-index'));
+                return this.currentMLResults.parcels[index];
+            });
+
+            // Show loading state
+            const outreachBtn = document.getElementById('initiate-outreach-btn');
+            if (outreachBtn) {
+                outreachBtn.disabled = true;
+                outreachBtn.textContent = '⏳ Exporting to CRM...';
+            }
+
+            // Export to CRM
+            const response = await fetch('/api/export-to-crm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    selected_parcels: selectedParcels,
+                    project_type: this.currentAnalysis?.project_type || 'solar',
+                    location: this.currentAnalysis?.location || 'Unknown Location',
+                    analysis_type: 'ml_enhanced'
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert(`✅ Successfully exported ${result.successful_exports} parcels to CRM!\n\nGroup: ${result.group_name}`);
+
+                // Clear selections
+                selectedCheckboxes.forEach(cb => cb.checked = false);
+                this.updateSelectionCount();
+
+                // Hide all feedback containers
+                document.querySelectorAll('[id^="feedback-"]').forEach(container => {
+                    container.style.display = 'none';
+                });
+
+            } else {
+                throw new Error(result.error || 'CRM export failed');
+            }
+
+        } catch (error) {
+            console.error('❌ CRM export error:', error);
+            alert(`❌ CRM export failed: ${error.message}`);
+        } finally {
+            // Restore button
+            const outreachBtn = document.getElementById('initiate-outreach-btn');
+            if (outreachBtn) {
+                outreachBtn.disabled = false;
+                outreachBtn.textContent = '📧 Initiate Outreach';
+            }
+        }
+    }
+
+    showPostOutreachFeedback(feedbackData) {
+        console.log('🤖 Showing post-outreach feedback with data:', feedbackData);
+
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.innerHTML = `
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">🤖 Help Improve ML Recommendations</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Thanks for your selections! Quick feedback to improve our AI:</p>
+
+                        ${feedbackData.notRecommendedSelected.length > 0 ? `
+                        <div class="alert alert-info">
+                            <strong>You selected ${feedbackData.notRecommendedSelected.length} parcels we didn't recommend.</strong>
+                            <br>What made these appealing despite our analysis?
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-primary me-2" onclick="workflow.recordBatchFeedback('selected_non_recommended', 'owner_relationships')">Owner Relationships</button>
+                                <button class="btn btn-sm btn-outline-primary me-2" onclick="workflow.recordBatchFeedback('selected_non_recommended', 'local_knowledge')">Local Knowledge</button>
+                                <button class="btn btn-sm btn-outline-primary me-2" onclick="workflow.recordBatchFeedback('selected_non_recommended', 'strategic_location')">Strategic Location</button>
+                                <button class="btn btn-sm btn-outline-primary" onclick="workflow.recordBatchFeedback('selected_non_recommended', 'other_factors')">Other Factors</button>
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        ${feedbackData.highMLNotSelected.length > 0 ? `
+                        <div class="alert alert-warning">
+                            <strong>You didn't select ${Math.min(3, feedbackData.highMLNotSelected.length)} high-scoring parcels.</strong>
+                            <br>What deterred you from these recommendations?
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-warning me-2" onclick="workflow.recordBatchFeedback('skipped_high_ml', 'owner_concerns')">Owner/Landowner Concerns</button>
+                                <button class="btn btn-sm btn-outline-warning me-2" onclick="workflow.recordBatchFeedback('skipped_high_ml', 'location_issues')">Location Issues</button>
+                                <button class="btn btn-sm btn-outline-warning me-2" onclick="workflow.recordBatchFeedback('skipped_high_ml', 'timing_constraints')">Timing/Market</button>
+                                <button class="btn btn-sm btn-outline-warning" onclick="workflow.recordBatchFeedback('skipped_high_ml', 'technical_concerns')">Technical Concerns</button>
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        ${feedbackData.notRecommendedSelected.length === 0 && feedbackData.highMLNotSelected.length === 0 ? `
+                        <div class="alert alert-success">
+                            <strong>Perfect! Your selections aligned well with our recommendations.</strong>
+                            <br>No feedback needed - the ML model is working well for this dataset.
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Skip Feedback</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Force show modal
+        try {
+            const bootstrapModal = new bootstrap.Modal(modal, {
+                backdrop: 'static',  // Prevent dismissal by clicking outside
+                keyboard: true
+            });
+            bootstrapModal.show();
+
+            console.log('✅ Modal should be visible now');
+
+            // Store feedback data for use by buttons
+            this.currentFeedbackData = feedbackData;
+
+            modal.addEventListener('hidden.bs.modal', () => {
+                document.body.removeChild(modal);
+                delete this.currentFeedbackData;
+            });
+        } catch (error) {
+            console.error('❌ Error showing feedback modal:', error);
+            // Fallback: simple alert
+            if (feedbackData.notRecommendedSelected.length > 0) {
+                setTimeout(() => {
+                    alert(`Notice: You selected ${feedbackData.notRecommendedSelected.length} parcels we didn't recommend. This feedback helps improve our ML model!`);
+                }, 1000);
+            }
+        }
+    }
+
+    showPostOutreachFeedbackDebug(feedbackData) {
+        console.log('🤖 CREATING FEEDBACK MODAL with data:', feedbackData);
+        console.log('🔍 DOM body children before:', document.body.children.length);
+
+        // Force remove any existing modals first
+        const existingModals = document.querySelectorAll('.feedback-modal');
+        console.log('🗑️ Removing existing modals:', existingModals.length);
+        existingModals.forEach(modal => modal.remove());
+
+        // Create modal HTML
+        const modalHtml = `
+            <div class="modal fade feedback-modal" id="feedbackModal" tabindex="-1" aria-labelledby="feedbackModalLabel" aria-hidden="true" style="z-index: 9999;">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title" id="feedbackModalLabel">🤖 Help Improve ML Recommendations</h5>
+                            <button type="button" class="btn-close btn-close-white" onclick="workflow.closeFeedbackModal()" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="lead">Thanks for your selections! Quick feedback to improve our AI:</p>
+
+                            ${feedbackData.notRecommendedSelected.length > 0 ? `
+                            <div class="alert alert-info border-start border-info border-4">
+                                <h6 class="alert-heading">You selected ${feedbackData.notRecommendedSelected.length} parcels we didn't recommend</h6>
+                                <p class="mb-2">What made these appealing despite our analysis showing concerns?</p>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <button class="btn btn-outline-primary btn-sm" onclick="workflow.recordBatchFeedbackAndClose('selected_non_recommended', 'owner_relationships')">
+                                        👥 Owner Relationships
+                                    </button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="workflow.recordBatchFeedbackAndClose('selected_non_recommended', 'local_knowledge')">
+                                        🗺️ Local Knowledge
+                                    </button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="workflow.recordBatchFeedbackAndClose('selected_non_recommended', 'strategic_location')">
+                                        📍 Strategic Location
+                                    </button>
+                                    <button class="btn btn-outline-primary btn-sm" onclick="workflow.recordBatchFeedbackAndClose('selected_non_recommended', 'market_timing')">
+                                        ⏰ Market Timing
+                                    </button>
+                                </div>
+                            </div>
+                            ` : ''}
+
+                            ${feedbackData.highMLNotSelected.length > 0 ? `
+                            <div class="alert alert-warning border-start border-warning border-4">
+                                <h6 class="alert-heading">You skipped ${feedbackData.highMLNotSelected.length} high-scoring parcels</h6>
+                                <p class="mb-2">What deterred you from these AI recommendations?</p>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <button class="btn btn-outline-warning btn-sm" onclick="workflow.recordBatchFeedbackAndClose('skipped_high_ml', 'owner_concerns')">
+                                        👤 Owner/Access Concerns
+                                    </button>
+                                    <button class="btn btn-outline-warning btn-sm" onclick="workflow.recordBatchFeedbackAndClose('skipped_high_ml', 'location_issues')">
+                                        📍 Location Issues
+                                    </button>
+                                    <button class="btn btn-outline-warning btn-sm" onclick="workflow.recordBatchFeedbackAndClose('skipped_high_ml', 'timing_constraints')">
+                                        ⏰ Timing/Market Fit
+                                    </button>
+                                    <button class="btn btn-outline-warning btn-sm" onclick="workflow.recordBatchFeedbackAndClose('skipped_high_ml', 'technical_concerns')">
+                                        ⚙️ Technical Concerns
+                                    </button>
+                                </div>
+                            </div>
+                            ` : ''}
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" onclick="workflow.closeFeedbackModal()">
+                                Skip Feedback
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add modal to page
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        console.log('📝 Modal HTML added to DOM');
+        console.log('🔍 DOM body children after:', document.body.children.length);
+
+        // Store feedback data
+        this.currentFeedbackData = feedbackData;
+
+        // Find the modal element
+        const modalElement = document.getElementById('feedbackModal');
+        console.log('🎯 Modal element found:', !!modalElement);
+
+        if (!modalElement) {
+            console.error('❌ Modal element not found after creation!');
+            this.showSimpleFeedback(feedbackData);
+            return;
+        }
+
+        // Check Bootstrap availability
+        console.log('🔍 Bootstrap check:', typeof bootstrap);
+        console.log('🔍 Window.bootstrap:', typeof window.bootstrap);
+
+        // Try multiple ways to show the modal
+        try {
+            // Method 1: Try Bootstrap 5
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                console.log('✅ Using Bootstrap 5 Modal');
+                const modal = new bootstrap.Modal(modalElement, {
+                    backdrop: 'static',
+                    keyboard: true,
+                    focus: true
+                });
+                modal.show();
+                console.log('✅ Bootstrap modal show() called');
+
+            } else if (typeof window.bootstrap !== 'undefined' && window.bootstrap.Modal) {
+                console.log('✅ Using window.bootstrap Modal');
+                const modal = new window.bootstrap.Modal(modalElement);
+                modal.show();
+
+            } else if (typeof $ !== 'undefined' && $.fn.modal) {
+                console.log('✅ Using jQuery Bootstrap Modal');
+                $(modalElement).modal('show');
+
+            } else {
+                console.log('⚠️ No Bootstrap found, using manual display');
+                this.showModalManually(modalElement);
+            }
+
+        } catch (error) {
+            console.error('❌ Error showing modal:', error);
+            this.showModalManually(modalElement);
+        }
+    }
+
+    // Add these helper methods
+    showModalManually(modalElement) {
+        console.log('🔧 Showing modal manually...');
+
+        // Create backdrop
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop fade show';
+        backdrop.style.zIndex = '9998';
+        document.body.appendChild(backdrop);
+
+        // Show modal
+        modalElement.style.display = 'block';
+        modalElement.style.zIndex = '9999';
+        modalElement.classList.add('show');
+        modalElement.setAttribute('aria-hidden', 'false');
+
+        // Add body class
+        document.body.classList.add('modal-open');
+
+        console.log('✅ Manual modal display complete');
+    }
+
+    closeFeedbackModal() {
+        console.log('🗑️ Closing feedback modal...');
+
+        const modal = document.getElementById('feedbackModal');
+        const backdrop = document.querySelector('.modal-backdrop');
+
+        if (modal) modal.remove();
+        if (backdrop) backdrop.remove();
+
+        document.body.classList.remove('modal-open');
+        delete this.currentFeedbackData;
+
+        console.log('✅ Modal closed');
+    }
+
+    showSimpleFeedback(feedbackData) {
+        console.log('🔄 Falling back to simple feedback...');
+
+        if (feedbackData.notRecommendedSelected.length > 0) {
+            setTimeout(() => {
+                const message = `You selected ${feedbackData.notRecommendedSelected.length} parcels we didn't recommend.\n\nWhat made these appealing?\n\n1. Owner relationships\n2. Local knowledge\n3. Strategic location\n4. Market timing\n\nClick 1-4 or Cancel to skip:`;
+
+                const response = prompt(message);
+                if (response && ['1','2','3','4'].includes(response)) {
+                    const reasons = ['owner_relationships', 'local_knowledge', 'strategic_location', 'market_timing'];
+                    this.recordBatchFeedback('selected_non_recommended', reasons[parseInt(response)-1]);
+                    alert('Thanks! Your feedback will improve future recommendations. 🚀');
+                }
+            }, 1000);
+        }
+    }
+
+    recordBatchFeedbackAndClose(feedbackType, reason) {
+        console.log(`📝 Recording feedback: ${feedbackType} - ${reason}`);
+
+        // Close modal
+        this.closeFeedbackModal();
+
+        // Record feedback
+        this.recordBatchFeedback(feedbackType, reason);
+
+        // Show thank you
+        setTimeout(() => {
+            alert('Thanks! Your feedback will improve future recommendations. 🚀');
+        }, 500);
+    }
+
+    async recordBatchFeedback(feedbackType, reason) {
+        try {
+            console.log(`📝 Recording batch feedback: ${feedbackType} - ${reason}`);
+
+            // Close the modal
+            const modal = document.querySelector('.modal.show');
+            if (modal) {
+                const bootstrapModal = bootstrap.Modal.getInstance(modal);
+                bootstrapModal.hide();
+            }
+
+            // Send feedback
+            const response = await fetch('/api/record-batch-feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    feedback_type: feedbackType,
+                    reason: reason,
+                    feedback_data: this.currentFeedbackData,
+                    project_type: this.currentAnalysis?.project_type || 'solar',
+                    location: this.currentAnalysis?.location || 'Unknown'
+                })
+            });
+
+            if (response.ok) {
+                this.showSuccessMessage('Thanks! Your feedback will improve future recommendations.');
+            }
+
+        } catch (error) {
+            console.error('❌ Error recording batch feedback:', error);
+        }
+    }
+
+    // Add these methods to your ProjectWorkflow class:
+    showScoringMethodology() {
+        const modal = document.createElement('div');
+        modal.className = 'modal fade';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">🧠 How ML Scores Are Calculated</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>🤖 ML Score (60% weight)</h6>
+                                <p>AI model considers:</p>
+                                <ul>
+                                    <li><strong>Parcel Size:</strong> Larger parcels (50+ acres) score higher</li>
+                                    <li><strong>Land Value:</strong> Lower cost land scores higher</li>
+                                    <li><strong>Owner Type:</strong> Government/corporate owners preferred</li>
+                                    <li><strong>Adjacent Land:</strong> Expansion potential bonus</li>
+                                    <li><strong>Historical Patterns:</strong> Learns from successful outreach</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>📊 Traditional Score (40% weight)</h6>
+                                <p>Engineering analysis based on:</p>
+                                <ul>
+                                    <li><strong>Slope Analysis:</strong> <15° preferred for development</li>
+                                    <li><strong>Transmission Distance:</strong> <1 mile to existing lines</li>
+                                    <li><strong>Voltage Requirements:</strong> 100-350kV preferred</li>
+                                    <li><strong>Environmental Factors:</strong> Flood zones, wetlands</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <hr>
+                        <div class="alert alert-info">
+                            <strong>🎯 Combined Score:</strong> Uses weighted average of ML (60%) + Traditional (40%) scores.
+                            Parcels scoring >65 are recommended for outreach.
+                        </div>
+                        <div class="alert alert-warning">
+                            <strong>📈 Continuous Learning:</strong> The ML model improves based on which parcels you select for outreach and rejection reasons.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
+
+        // Clean up when modal is hidden
+        modal.addEventListener('hidden.bs.modal', () => {
+            document.body.removeChild(modal);
+        });
+    }
+
+    async recordRejectionReason(parcelId, reason) {
+        try {
+            console.log(`📝 Recording rejection: ${parcelId} - ${reason}`);
+
+            // Find the parcel data
+            const parcel = this.currentMLResults.parcels.find(p => p.parcel_id === parcelId);
+            if (!parcel) {
+                console.error('Parcel not found for rejection tracking');
+                return;
+            }
+
+            // Send rejection feedback to backend
+            const response = await fetch('/api/record-rejection', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    parcel_id: parcelId,
+                    rejection_reason: reason,
+                    parcel_data: parcel,
+                    project_type: this.currentAnalysis?.project_type || 'solar',
+                    location: this.currentAnalysis?.location || 'Unknown'
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log('✅ Rejection recorded:', result);
+
+                // Show success feedback
+                this.showSuccessMessage(`Feedback recorded: ${reason.replace('_', ' ')}`);
+
+                // Optionally hide the rejected row or mark it as processed
+                const row = document.querySelector(`tr[data-parcel-index]`);
+                if (row) {
+                    row.style.opacity = '0.6';
+                    row.querySelector('.dropdown button').textContent = 'Feedback Sent';
+                    row.querySelector('.dropdown button').disabled = true;
+                }
+            } else {
+                throw new Error('Failed to record rejection');
+            }
+
+        } catch (error) {
+            console.error('❌ Error recording rejection:', error);
+            alert(`Failed to record feedback: ${error.message}`);
+        }
+    }
+
+    async testOutreachTracking() {
+        try {
+            console.log('🧪 Testing outreach tracking...');
+
+            const response = await fetch('/api/test-outreach-tracking', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    test_parcels: [
+                        {
+                            parcel_id: 'TEST_FRONTEND_001',
+                            owner: 'Frontend Test Owner',
+                            acreage_calc: 45.0,
+                            ml_analysis: { predicted_score: 78.5 },
+                            suitability_analysis: { overall_score: 82.0 }
+                        }
+                    ]
+                })
+            });
+
+            const result = await response.json();
+            console.log('🧪 Tracking test result:', result);
+
+            if (result.success) {
+                alert(`✅ BigQuery tracking test successful!\nTracked: ${result.message}\nRecent history: ${result.recent_history_count} events`);
+            } else {
+                alert(`❌ BigQuery tracking test failed: ${result.error}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Tracking test error:', error);
+            alert(`❌ Tracking test failed: ${error.message}`);
+        }
+    }
+
+    attachMLCheckboxListeners() {
+        // Update selection count when individual checkboxes change
+        const checkboxes = document.querySelectorAll('.ml-parcel-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.updateSelectionCount();
+            });
+        });
+    }
+
+    toggleAllParcels(checked) {
+        const checkboxes = document.querySelectorAll('.ml-parcel-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = checked;
+        });
+
+        // Update both header checkboxes
+        document.getElementById('select-all-ml-parcels').checked = checked;
+        document.getElementById('header-select-all').checked = checked;
+
+        this.updateSelectionCount();
+    }
+
+    // Add feedback collection method
+    async rateParcels(parcelId) {
+        const parcel = this.currentMLResults.parcels.find(p => p.parcel_id === parcelId);
+        if (!parcel) return;
+
+        const rating = prompt(`Rate this parcel (1-100):\n\nParcel: ${parcel.parcel_id}\nOwner: ${parcel.owner}\nML Score: ${parcel.suitability_analysis.ml_score}\n\nYour rating (1-100):`);
+
+        if (rating && !isNaN(rating) && rating >= 1 && rating <= 100) {
+            try {
+                const response = await fetch('/api/parcel/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        parcel_id: parcelId,
+                        user_rating: parseInt(rating),
+                        feedback_type: rating > 70 ? 'interested' : 'not_interested',
+                        notes: `User rating: ${rating}/100`
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    alert(`✅ Feedback saved! This will help improve future recommendations.`);
+                } else {
+                    alert(`❌ Failed to save feedback: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error saving feedback: ${error.message}`);
+            }
+        }
+    }
+
     exportSuitableParcelsList() {
         if (!this.currentSuitabilityResults) {
             alert('No suitability results to export');
@@ -2862,6 +4266,50 @@ function updateVariable(name, value) {
 }
 
 console.log('Optimized workflow with preview/download functionality loaded successfully!');
+</script>
+<script>
+// Debug the analyze button
+function debugAnalyzeButton() {
+    console.log('🔍 DEBUGGING ANALYZE BUTTON');
+
+    // Check if button exists
+    const button = document.getElementById('analyze-suitability-btn');
+    console.log('Button found:', !!button);
+
+    if (button) {
+        console.log('Button text:', button.textContent);
+        console.log('Button disabled:', button.disabled);
+        console.log('Button onclick:', button.onclick);
+        console.log('Button event listeners:', getEventListeners ? getEventListeners(button) : 'Cannot check listeners');
+    }
+
+    // Check if workflow object exists
+    console.log('Workflow object exists:', typeof workflow);
+    console.log('Workflow methods available:', workflow ? Object.getOwnPropertyNames(Object.getPrototypeOf(workflow)) : 'No workflow');
+
+    // Check if the method exists
+    if (workflow && workflow.analyzeParcelSuitability) {
+        console.log('analyzeParcelSuitability method exists:', typeof workflow.analyzeParcelSuitability);
+    }
+
+    // Check current parcel results
+    console.log('Current parcel results available:', !!workflow?.currentParcelResults);
+    console.log('Parcel data length:', workflow?.currentParcelResults?.parcel_data?.length || 0);
+}
+
+// Auto-run debug after page loads
+setTimeout(debugAnalyzeButton, 3000);
+
+// Add manual debug button
+function addDebugButton() {
+    const debugBtn = document.createElement('button');
+    debugBtn.textContent = '🔍 Debug Button';
+    debugBtn.style.cssText = 'position: fixed; top: 10px; right: 10px; z-index: 9999; background: red; color: white; border: none; padding: 5px 10px;';
+    debugBtn.onclick = debugAnalyzeButton;
+    document.body.appendChild(debugBtn);
+}
+
+setTimeout(addDebugButton, 1000);
 </script>
 </body>
 </html>
