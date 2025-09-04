@@ -1,12 +1,33 @@
- # app.py - Main Flask Application
+# app.py - Main Flask Application
 import os
 from dotenv import load_dotenv
+
+# CRITICAL FIX: Load environment variables FIRST
+load_dotenv()
+
+# Import all required modules BEFORE using them
+import logging
 from datetime import datetime, timedelta, timezone
+from functools import wraps
+import json
+import traceback
+import tempfile
+import uuid
+import pandas as pd
 import numpy as np
+import requests
+import geopandas as gpd
+from google.cloud import storage
+import io
 from decimal import Decimal
 from collections import Counter
-from enhanced_parcel_search import get_gcs_client
-import traceback
+
+# CRITICAL: Import werkzeug BEFORE using it
+from werkzeug.security import check_password_hash, generate_password_hash
+
+# Import Flask modules
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file, abort, flash
+
 try:
     from services.census_api import CensusCountyAPI
     CENSUS_API_AVAILABLE = True
@@ -19,10 +40,6 @@ if 'ANTHROPIC_API_KEY' in os.environ:
     print(f"🔄 Removing old system key: {os.environ['ANTHROPIC_API_KEY'][:20]}...")
     del os.environ['ANTHROPIC_API_KEY']
 
-# Force load from .env file
-print("📁 Loading .env file with override...")
-load_dotenv('.env', override=True)
-
 # Verify the new key
 new_key = os.getenv('ANTHROPIC_API_KEY')
 if new_key:
@@ -34,37 +51,71 @@ from services.ai_service import AIAnalysisService
 from models.project_config import ProjectConfig
 from datetime import datetime
 from config import config, get_county_id
-import uuid
 from flask import send_file, abort
-import tempfile
-import math
-import json
-import logging
-from flask import Flask, render_template, request, jsonify, redirect, url_for, Response
-import pandas as pd
-import requests
-from google.cloud import storage
-import io
-import geopandas as gpd
+from flask import session, redirect, url_for, flash
 
+# Initialize Flask app
+app = Flask(__name__, template_folder='templates')
+
+# Configure Flask session BEFORE using session
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'Lisboa!2022')
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+# NOW you can safely use generate_password_hash
+USERS = {
+    'demo': generate_password_hash('bcf2025'),
+    'admin': generate_password_hash(os.getenv('ADMIN_PASSWORD', 'admin123')),
+}
 
-app = Flask(__name__)
+# Test that the password hashing works
+logger.info(f"Users configured: {list(USERS.keys())}")
+logger.info("Password hashing test:")
+test_hash = generate_password_hash('test123')
+test_verify = check_password_hash(test_hash, 'test123')
+logger.info(f"Password system working: {test_verify}")
+
+# Test password system
+try:
+    test_result = check_password_hash(USERS['demo'], 'bcf2025')
+    logger.info(f"Demo user password verification: {'SUCCESS' if test_result else 'FAILED'}")
+except Exception as e:
+    logger.error(f"Password system error: {e}")
 
 from enhanced_parcel_search import run_headless
-from bigquery_slope_analysis import run_headless_fixed as run_slope_analysis
-from transmission_analysis_bigquery import run_headless as run_transmission_analysis
 from services.crm_service import CRMService
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configure Flask session
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'Lisboa!2022')
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+
+# Simple user database - Replace with database in production
+USERS = {
+ 'demo': generate_password_hash('bcf2025'),
+ 'admin': generate_password_hash(os.getenv('ADMIN_PASSWORD', 'admin123')),
+ # Add more users as needed
+}
+
+# Verify user setup
+logger.info(f"Configured users: {list(USERS.keys())}")
+logger.info(f"Demo user hash: {USERS['demo'][:20]}...")
+
+# Test password verification (for debugging)
+def test_user_auth():
+    """Test function to verify password hashing works"""
+    try:
+        test_hash = USERS['demo']
+        test_result = check_password_hash(test_hash, 'bcf2025')
+        logger.info(f"Password verification test: {'PASS' if test_result else 'FAIL'}")
+        return test_result
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return False
+
+test_user_auth()
 
 # Debug: Check what API key is loaded
 api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -78,10 +129,101 @@ ai_service = AIAnalysisService(
     api_key=os.getenv('ANTHROPIC_API_KEY')  # ✅ SECURE
 )
 
+
+def login_required(f):
+     """Decorator to require login for routes"""
+
+     @wraps(f)
+     def decorated_function(*args, **kwargs):
+         if 'logged_in' not in session or not session['logged_in']:
+             if request.is_json:
+                 return jsonify({'error': 'Authentication required'}), 401
+             return redirect(url_for('login'))
+         return f(*args, **kwargs)
+
+     return decorated_function
+
+
+def get_current_user():
+     """Get current logged in user"""
+     if 'logged_in' in session and session['logged_in']:
+         return session.get('username', 'Unknown')
+     return None
+
+
+ # Authentication Routes
+@app.route('/test-template')
+def test_template():
+    return render_template('login.html', error='This is a test error message')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Handle user login with proper error handling"""
+    if request.method == 'POST':
+        try:
+            # Get form data safely
+            username = request.form.get('username', '').strip()
+            password = request.form.get('password', '')
+
+            # Validate input
+            if not username or not password:
+                return render_template('login.html', error='Please enter both username and password')
+
+            # Check credentials
+            if username in USERS and check_password_hash(USERS[username], password):
+                # Set session data
+                session.clear()  # Clear any existing session
+                session['logged_in'] = True
+                session['username'] = username
+                session['login_time'] = datetime.now().isoformat()
+
+                # Log successful login
+                logger.info(f"Successful login: {username}")
+
+                # Redirect to main page
+                return redirect(url_for('index'))
+            else:
+                # Log failed attempt
+                logger.warning(f"Failed login attempt: {username}")
+                return render_template('login.html', error='Invalid username or password')
+
+        except Exception as e:
+            # Log the error
+            logger.error(f"Login error: {str(e)}")
+            return render_template('login.html', error='Login system error. Please try again.')
+
+    # GET request - show login form
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+     """Logout and clear session"""
+     username = session.get('username', 'Unknown')
+     session.clear()
+     logger.info(f"User logged out: {username}")
+     flash('You have been logged out successfully')
+     return redirect(url_for('login'))
+
+
+@app.route('/api/auth/status')
+def auth_status():
+     """Check authentication status"""
+     if 'logged_in' in session and session['logged_in']:
+         return jsonify({
+             'authenticated': True,
+             'username': session.get('username'),
+             'login_time': session.get('login_time')
+         })
+     return jsonify({'authenticated': False})
+
+
 @app.route('/')
+@login_required
 def index():
-    """Main application page"""
-    return render_template('index.html')
+    """Main application page - now protected"""
+    return render_template('index.html',
+                         current_user=get_current_user())
 
 
 @app.route('/api/tier-info', methods=['GET'])
@@ -490,51 +632,65 @@ def get_existing_files():
 
         logger.info(f"Getting existing files for {county}, {state}")
 
+        # Try to get GCS client
         client = get_gcs_client()
         if not client:
+            logger.warning("GCS not available - returning empty file list")
             return jsonify({
-                'success': False,
-                'error': 'Could not connect to cloud storage'
+                'success': True,
+                'files': [],
+                'folder_path': f"Cloud storage not available",
+                'message': 'Cloud storage not configured - no existing files found'
             })
 
         bucket_name = os.getenv('CACHE_BUCKET_NAME', 'bcfparcelsearchrepository')
-        bucket = client.bucket(bucket_name)
 
-        folder_prefix = f"{state}/{county}/"
-        parcel_files_prefix = f"{folder_prefix}Parcel_Files/"
+        try:
+            bucket = client.bucket(bucket_name)
+            folder_prefix = f"{state}/{county}/"
+            parcel_files_prefix = f"{folder_prefix}Parcel_Files/"
 
-        files = []
-        blobs = bucket.list_blobs(prefix=parcel_files_prefix)
+            files = []
+            blobs = bucket.list_blobs(prefix=parcel_files_prefix)
 
-        for blob in blobs:
-            if blob.name.endswith('/'):  # Skip folder entries
-                continue
+            for blob in blobs:
+                if blob.name.endswith('/'):  # Skip folder entries
+                    continue
 
-            # ONLY INCLUDE CSV FILES
-            if not blob.name.lower().endswith('.csv'):
-                continue
+                # ONLY INCLUDE CSV FILES
+                if not blob.name.lower().endswith('.csv'):
+                    continue
 
-            # FIX: Ensure proper GCS path format
-            file_info = {
-                'name': blob.name.split('/')[-1],
-                'path': f"gs://{bucket_name}/{blob.name}",  # Proper GCS format
-                'size': blob.size,
-                'created': blob.time_created.isoformat() if blob.time_created else None,
-                'updated': blob.updated.isoformat() if blob.updated else None,
-                'type': 'CSV',
-                'parcel_count': estimate_parcel_count_from_filename(blob.name),
-                'search_criteria': extract_search_criteria_from_filename(blob.name)
-            }
+                # Proper GCS path format
+                file_info = {
+                    'name': blob.name.split('/')[-1],
+                    'path': f"gs://{bucket_name}/{blob.name}",
+                    'size': blob.size,
+                    'created': blob.time_created.isoformat() if blob.time_created else None,
+                    'updated': blob.updated.isoformat() if blob.updated else None,
+                    'type': 'CSV',
+                    'parcel_count': estimate_parcel_count_from_filename(blob.name),
+                    'search_criteria': extract_search_criteria_from_filename(blob.name)
+                }
 
-            files.append(file_info)
+                files.append(file_info)
 
-        logger.info(f"Found {len(files)} CSV files for {county}, {state}")
+            logger.info(f"Found {len(files)} CSV files for {county}, {state}")
 
-        return jsonify({
-            'success': True,
-            'files': files,
-            'folder_path': f"gs://{bucket_name}/{folder_prefix}"
-        })
+            return jsonify({
+                'success': True,
+                'files': files,
+                'folder_path': f"gs://{bucket_name}/{folder_prefix}"
+            })
+
+        except Exception as bucket_error:
+            logger.error(f"Bucket access error: {bucket_error}")
+            return jsonify({
+                'success': True,
+                'files': [],
+                'folder_path': f"gs://{bucket_name}/",
+                'message': f'Bucket access failed: {str(bucket_error)}'
+            })
 
     except Exception as e:
         logger.error(f"Error getting existing files: {str(e)}")
@@ -542,6 +698,41 @@ def get_existing_files():
             'success': False,
             'error': f'Failed to get existing files: {str(e)}'
         })
+
+
+# Helper function for the parcel count estimation (if missing)
+def estimate_parcel_count_from_filename(filename):
+    """Try to extract parcel count from filename patterns"""
+    import re
+
+    # Look for patterns like "parcels_1234" or similar
+    match = re.search(r'(\d+)(?:_parcels?|parcels?)', filename.lower())
+    if match:
+        return int(match.group(1))
+
+    # Default estimate based on file type
+    if filename.lower().endswith('.csv'):
+        return "~100-500"
+    elif filename.lower().endswith('.gpkg'):
+        return "~50-200"
+    else:
+        return "Unknown"
+
+
+def extract_search_criteria_from_filename(filename):
+    """Extract search criteria hints from filename"""
+    criteria_hints = []
+
+    filename_lower = filename.lower()
+
+    if 'acres' in filename_lower:
+        criteria_hints.append('Acreage-based search')
+    if 'owner' in filename_lower:
+        criteria_hints.append('Owner search')
+    if any(word in filename_lower for word in ['solar', 'wind', 'battery']):
+        criteria_hints.append('Project-specific search')
+
+    return '; '.join(criteria_hints) if criteria_hints else 'Standard parcel search'
 
 def get_file_type_from_name(filename):
      """Get file type from filename extension"""
@@ -875,6 +1066,7 @@ def preview_parcel_search():
 
 
 @app.route('/api/parcel-search/execute', methods=['POST'])
+@login_required
 def execute_parcel_search():
     """Execute full parcel search and return results"""
     try:
@@ -1591,6 +1783,50 @@ def calculate_environmental_constraints_score(parcel):
 
     return max(0, score)
 
+
+# Add this function to your app.py (after your imports, before your routes)
+
+def get_gcs_client():
+    """Get Google Cloud Storage client with proper error handling"""
+    try:
+        from google.cloud import storage
+
+        # Try to initialize the client
+        client = storage.Client()
+
+        # Test the client by trying to access a bucket
+        bucket_name = os.getenv('BUCKET_NAME', 'bcfparcelsearchrepository')
+        try:
+            bucket = client.bucket(bucket_name)
+            # Test bucket access
+            bucket.reload()  # This will fail if no access
+            logger.info(f"✅ GCS client initialized successfully for bucket: {bucket_name}")
+            return client
+        except Exception as bucket_error:
+            logger.warning(f"⚠️ GCS bucket access failed: {bucket_error}")
+            logger.info("Continuing without cloud storage - some features may be limited")
+            return None
+
+    except ImportError:
+        logger.warning("⚠️ Google Cloud Storage not available - install google-cloud-storage")
+        return None
+    except Exception as e:
+        logger.error(f"❌ GCS client initialization failed: {e}")
+        return None
+
+
+# Also add this helper function for safe GCS operations
+def safe_gcs_operation(operation_name, operation_func, *args, **kwargs):
+    """Safely execute GCS operations with fallback"""
+    try:
+        client = get_gcs_client()
+        if not client:
+            logger.warning(f"GCS not available for {operation_name}")
+            return None
+        return operation_func(client, *args, **kwargs)
+    except Exception as e:
+        logger.error(f"GCS operation '{operation_name}' failed: {e}")
+        return None
 
 def save_analysis_to_gcs(result_data, project_id):
     """Save analysis results to your GCS bucket"""
@@ -3216,7 +3452,6 @@ def debug_counties(state):
          counties = get_counties_for_state(state)
 
          # Also try to load raw data for inspection
-         import os
          current_dir = os.path.dirname(os.path.abspath(__file__))
          counties_file_path = os.path.join(current_dir, 'counties-trimmed.json')
 
@@ -3999,6 +4234,7 @@ def analyze_county_activity(state, county, county_fips):
          }
 
 @app.route('/api/analyze-state-counties', methods=['POST'])
+@login_required
 def analyze_state_counties():
      try:
          data = request.get_json()
@@ -4894,6 +5130,7 @@ def test_crm():
 
 
 @app.route('/api/export-to-crm', methods=['POST'])
+@login_required
 def export_to_crm():
      try:
          data = request.json
@@ -4971,6 +5208,34 @@ def export_to_crm():
              'error_type': type(e).__name__
          }), 500
 
+@app.before_request
+def log_user_activity():
+    """Log user activity for authenticated requests"""
+    if request.endpoint and 'logged_in' in session and session['logged_in']:
+        username = session.get('username', 'Unknown')
+        if request.endpoint not in ['static', 'auth_status']:
+            logger.info(f"User activity: {username} -> {request.endpoint}")
+
+# Session timeout (optional)
+@app.before_request
+def check_session_timeout():
+    """Check for session timeout (24 hours)"""
+    if 'logged_in' in session and session['logged_in']:
+        login_time_str = session.get('login_time')
+        if login_time_str:
+            try:
+                login_time = datetime.fromisoformat(login_time_str)
+                if datetime.now() - login_time > timedelta(hours=24):
+                    session.clear()
+                    if request.is_json:
+                        return jsonify({'error': 'Session expired'}), 401
+                    return redirect(url_for('login'))
+            except:
+                # Invalid login time, clear session
+                session.clear()
+                if request.is_json:
+                    return jsonify({'error': 'Session invalid'}), 401
+                return redirect(url_for('login'))
 
 def discover_and_map_all_fields(self, parcel):
      """Discover all available fields in parcel data and attempt to map them"""

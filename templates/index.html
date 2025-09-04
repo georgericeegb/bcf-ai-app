@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Renewable Energy Project Analyzer</title>
+    <!-- Add this to your existing index.html template -->
+    <div class="user-info" style="position: absolute; top: 10px; right: 20px;">
+        <span>Welcome, {{ current_user }}!</span>
+        <a href="/logout" class="btn btn-sm btn-outline-secondary ms-2">Logout</a>
+    </div>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -1245,7 +1250,7 @@
                                 <div class="col-md-4">
                                     <div class="feature-card h-100 p-4 bg-light rounded-3">
                                         <div class="feature-icon mb-3">📊</div>
-                                        <h5>CRM Integration</h5>
+                                        <h5>Outreach Integration</h5>
                                         <p class="small text-muted">Seamless workflow from analysis to outreach management</p>
                                     </div>
                                 </div>
@@ -4413,7 +4418,7 @@ try {
                                                     <i class="fas fa-download me-1"></i>Export CSV
                                                 </button>
                                                 <button class="btn btn-sm btn-secondary ms-2" onclick="bcf.exportToCRM()" id="exportToCrmBtn" disabled>
-                                                    <i class="fas fa-upload me-1"></i>Export to CRM (Select Parcels)
+                                                    <i class="fas fa-upload me-1"></i>Initiate Outreach (Select Parcels)
                                                 </button>
                                             </div>
                                         </div>
@@ -4451,7 +4456,7 @@ try {
                                                 <div class="col-md-8">
                                                     <small class="text-muted">
                                                         <i class="fas fa-info-circle me-1"></i>
-                                                        Select parcels to export to your CRM system. Excellent parcels (85+ score) are pre-selected.
+                                                        Select parcels for Outreach efforts. Excellent parcels (85+ score) are pre-selected.
                                                     </small>
                                                 </div>
                                                 <div class="col-md-4 text-end">
@@ -5324,7 +5329,7 @@ try {
 
             if (detailsElement) {
                 if (selectedCount === 0) {
-                    detailsElement.textContent = 'Select parcels to export to CRM';
+                    detailsElement.textContent = 'Select parcels for Outreach';
                     detailsElement.className = 'text-muted';
                 } else {
                     // Calculate category breakdown of selected parcels
@@ -5344,7 +5349,7 @@ try {
                     if (fairSelected > 0) breakdown.push(`${fairSelected} Fair`);
                     if (poorSelected > 0) breakdown.push(`${poorSelected} Poor`);
 
-                    detailsElement.textContent = `Selected: ${breakdown.join(', ')} • Ready for CRM export`;
+                    detailsElement.textContent = `Selected: ${breakdown.join(', ')} • Ready to initiate Outreach`;
                     detailsElement.className = 'text-success';
                 }
             }
@@ -5364,10 +5369,10 @@ try {
             if (exportButton) {
                 exportButton.disabled = selectedCount === 0;
                 if (selectedCount === 0) {
-                    exportButton.innerHTML = '<i class="fas fa-upload me-1"></i>Export to CRM (Select Parcels)';
+                    exportButton.innerHTML = '<i class="fas fa-upload me-1"></i>Initiate Outreach (Select Parcels)';
                     exportButton.className = 'btn btn-sm btn-secondary ms-2';
                 } else {
-                    exportButton.innerHTML = `<i class="fas fa-upload me-1"></i>Export ${selectedCount} Parcels to CRM`;
+                    exportButton.innerHTML = `<i class="fas fa-upload me-1"></i>Initate Outreach: ${selectedCount} Parcels`;
                     exportButton.className = 'btn btn-sm btn-success ms-2';
                 }
             }
@@ -5470,7 +5475,7 @@ try {
             const selectedParcels = this.getSelectedParcels();
 
             if (selectedParcels.length === 0) {
-                alert('Please select at least one parcel to export to CRM.');
+                alert('Please select at least one parcel for Outreach.');
                 return;
             }
 
@@ -5527,10 +5532,10 @@ try {
                 }
 
                 if (result.success) {
-                    console.log('CRM export successful:', result);
+                    console.log('Outreach initiation successful:', result);
                     this.showSelectiveCRMExportResults(result, selectedParcels.length);
                 } else {
-                    throw new Error(result.error || 'CRM export returned success=false');
+                    throw new Error(result.error || 'Outreach initiation returned success=false');
                 }
 
             } catch (error) {
@@ -5538,7 +5543,7 @@ try {
                 console.error('Error stack:', error.stack);
 
                 // Show detailed error to user
-                const errorMsg = `CRM export failed: ${error.message}\n\nCheck browser console for detailed logs.`;
+                const errorMsg = `Outreach initatiion failed: ${error.message}\n\nCheck browser console for detailed logs.`;
                 alert(errorMsg);
 
             } finally {
@@ -5560,8 +5565,8 @@ try {
                             </div>
                             <div class="modal-body">
                                 <div class="alert alert-success">
-                                    <h6 class="alert-heading">Export Completed Successfully</h6>
-                                    <p class="mb-0">Your selected parcels have been exported to your CRM system.</p>
+                                    <h6 class="alert-heading">Outreach Initiation Completed Successfully</h6>
+                                    <p class="mb-0">Your selected parcels have been marked for Outreach.</p>
                                 </div>
 
                                 <div class="row mb-3">
@@ -5615,24 +5620,20 @@ try {
                                 ${result.failed_exports > 0 ? `
                                     <div class="alert alert-warning">
                                         <h6>Some exports failed</h6>
-                                        <p class="small mb-0">Check the CRM system for details on failed items. Common issues include missing required fields or data validation errors.</p>
+                                        <p class="small mb-0">Check with admin for details on failed items. Common issues include missing required fields or data validation errors.</p>
                                     </div>
                                 ` : ''}
 
                                 <div class="mt-3">
                                     <h6>Next Steps:</h6>
                                     <ul class="small">
-                                        <li>Review exported parcels in your CRM system</li>
                                         <li>Begin outreach campaigns for selected parcels</li>
-                                        <li>Use CRM data for project development tracking</li>
-                                        <li>Export additional parcels as needed</li>
+                                        <li>Use platform for project development tracking</li>
+                                        <li>Send additional parcels for Outreach as needed</li>
                                     </ul>
                                 </div>
                             </div>
                             <div class="modal-footer">
-                                <a href="#" class="btn btn-primary" target="_blank">
-                                    View in CRM System
-                                </a>
                                 <button type="button" class="btn btn-success" onclick="bcf.clearSelection(); bootstrap.Modal.getInstance(document.getElementById('crmExportModal')).hide();">
                                     Clear Selection & Close
                                 </button>
@@ -5925,20 +5926,20 @@ try {
         }
 
         showCRMExportResults(result) {
-            console.log('CRM export completed:', result);
+            console.log('Outreach initiation completed:', result);
 
             const modalHtml = `
                 <div class="modal fade" id="crmExportModal" tabindex="-1">
                     <div class="modal-dialog modal-lg">
                         <div class="modal-content">
                             <div class="modal-header">
-                                <h5 class="modal-title">CRM Export Results</h5>
+                                <h5 class="modal-title">Outreach Initiation Results</h5>
                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
                                 <div class="alert alert-success">
-                                    <h6 class="alert-heading">Export Completed Successfully</h6>
-                                    <p class="mb-0">Your suitability analysis results have been exported to your CRM system.</p>
+                                    <h6 class="alert-heading">Outreach Initiation Completed Successfully</h6>
+                                    <p class="mb-0">Your suitability analysis results have been saved.</p>
                                 </div>
 
                                 <div class="row mb-3">
@@ -5973,14 +5974,11 @@ try {
                                 ${result.failed_exports > 0 ? `
                                     <div class="alert alert-warning">
                                         <h6>Some exports failed</h6>
-                                        <p class="small mb-0">Check the CRM system for details on failed items. Common issues include missing required fields or data validation errors.</p>
+                                        <p class="small mb-0">Check with admin for details on failed items. Common issues include missing required fields or data validation errors.</p>
                                     </div>
                                 ` : ''}
                             </div>
                             <div class="modal-footer">
-                                <a href="#" class="btn btn-primary" target="_blank">
-                                    View in CRM System
-                                </a>
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                             </div>
                         </div>
