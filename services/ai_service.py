@@ -132,6 +132,157 @@ class AIAnalysisService:
             # Fallback response
             return self._get_fallback_variables(project_type, analysis_level)
 
+    def analyze_state_counties(self, state, project_type, counties):
+        """Generate comprehensive county rankings for all counties in state"""
+
+        # Get state name for better context
+        state_names = {
+            'AL': 'Alabama', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+            'CO': 'Colorado', 'FL': 'Florida', 'GA': 'Georgia', 'IL': 'Illinois',
+            'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky',
+            'LA': 'Louisiana', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi',
+            'MO': 'Missouri', 'NE': 'Nebraska', 'NV': 'Nevada', 'NM': 'New Mexico',
+            'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota',
+            'OH': 'Ohio', 'OK': 'Oklahoma', 'PA': 'Pennsylvania', 'SC': 'South Carolina',
+            'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah',
+            'VA': 'Virginia', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+        }
+
+        state_full_name = state_names.get(state, state)
+
+        # Create a comprehensive prompt that ensures all counties get scored
+        county_names = [c['name'] for c in counties]
+
+        prompt = f"""
+        You are a renewable energy market analyst. Analyze and rank ALL counties in {state_full_name} for {project_type} energy development potential.
+
+        Counties to analyze: {', '.join(county_names)}
+
+        For EACH county listed above, provide a score 0-100 considering:
+        1. Renewable energy policies and incentives
+        2. Grid infrastructure and transmission access  
+        3. {project_type} resource quality (solar irradiance/wind speeds)
+        4. Land availability and terrain suitability
+        5. Permitting and regulatory environment
+        6. Economic development priorities
+        7. Existing renewable energy projects
+        8. Community acceptance and political support
+
+        You MUST rank ALL {len(county_names)} counties. Provide exactly this JSON format:
+
+        {{
+            "analysis_summary": "Brief overview of {state_full_name}'s {project_type} energy landscape and development potential",
+            "county_rankings": [
+                {{
+                    "name": "County Name",
+                    "fips": "county_fips_code",
+                    "score": 85,
+                    "rank": 1,
+                    "strengths": ["Strong grid infrastructure", "Favorable policies", "Good resource quality"],
+                    "challenges": ["Limited land availability"],
+                    "summary": "Brief 1-2 sentence explanation of why this county ranks here",
+                    "resource_quality": "Excellent",
+                    "policy_environment": "Very Supportive", 
+                    "development_activity": "High"
+                }}
+            ]
+        }}
+
+        Requirements:
+        - Include ALL {len(county_names)} counties in your rankings
+        - Scores should range from 30-95 to show meaningful differences
+        - Rank from 1 to {len(county_names)} (1 = best)
+        - Include 2-4 specific strengths per county
+        - Include 1-2 challenges where relevant
+        - Resource quality: Excellent/Very Good/Good/Fair/Poor
+        - Policy environment: Very Supportive/Supportive/Neutral/Restrictive
+        - Development activity: High/Medium/Low/None
+
+        Focus on actionable intelligence for {project_type} project developers.
+        """
+
+        try:
+            logger.info(f"🤖 Generating comprehensive county rankings for {state} - {project_type}")
+
+            response = self.client.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=6000,  # Increased for full county list
+                system="You are an expert renewable energy market analyst with deep knowledge of state and local energy policies, grid infrastructure, and development conditions. Provide comprehensive, data-driven county rankings.",
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            # Parse JSON response
+            analysis_text = response.content[0].text
+            logger.debug(f"📝 AI Response: {analysis_text[:500]}...")
+
+            # Extract JSON from response
+            import re
+            json_match = re.search(r'\{.*\}', analysis_text, re.DOTALL)
+            if json_match:
+                try:
+                    analysis_data = json.loads(json_match.group())
+
+                    # Add FIPS codes from our county data and validate completeness
+                    returned_counties = analysis_data.get('county_rankings', [])
+
+                    # Match with our county list and add missing FIPS
+                    for ranking in returned_counties:
+                        county_name = ranking.get('name', '')
+                        # Match with our county list
+                        for county in counties:
+                            if county['name'].lower() in county_name.lower() or county_name.lower() in county[
+                                'name'].lower():
+                                ranking['fips'] = county['fips']
+                                break
+
+                    # If AI didn't return all counties, add the missing ones with default scores
+                    returned_names = {r.get('name', '').lower() for r in returned_counties}
+                    missing_counties = []
+
+                    for county in counties:
+                        if county['name'].lower() not in returned_names and not any(
+                                county['name'].lower() in name for name in returned_names):
+                            missing_counties.append({
+                                'name': county['name'],
+                                'fips': county['fips'],
+                                'score': 50,  # Default middle score
+                                'rank': len(returned_counties) + len(missing_counties) + 1,
+                                'strengths': ['Standard grid access', 'Basic infrastructure'],
+                                'challenges': ['Limited analysis available'],
+                                'summary': f"County requires additional market analysis for {project_type} development potential",
+                                'resource_quality': 'Good',
+                                'policy_environment': 'Neutral',
+                                'development_activity': 'Low'
+                            })
+
+                    # Combine and re-sort
+                    all_counties = returned_counties + missing_counties
+                    all_counties.sort(key=lambda x: x.get('score', 0), reverse=True)
+
+                    # Update ranks
+                    for i, county in enumerate(all_counties):
+                        county['rank'] = i + 1
+
+                    analysis_data['county_rankings'] = all_counties
+
+                    logger.info(
+                        f"✅ Generated rankings for {len(all_counties)} counties ({len(returned_counties)} from AI, {len(missing_counties)} added)")
+                    return analysis_data
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ JSON parsing error: {e}")
+                    logger.error(f"Raw response: {analysis_text}")
+                    return None
+
+            else:
+                logger.error("❌ Failed to extract JSON from AI response")
+                logger.error(f"Raw response: {analysis_text}")
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ AI county analysis error: {e}")
+            return None
+
     def analyze_focus_areas(self, project_type: str, analysis_level: str, location: str,
                             selected_criteria: List[str]) -> Dict[str, Any]:
         """Analyze selected focus areas for the chosen tier and location"""

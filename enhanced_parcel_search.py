@@ -235,7 +235,8 @@ def run_headless(**search_params):
                 'preview_url': '',
                 'download_url': '',
                 'parcel_data': [],
-                'processing_time': time.time() - start_time
+                'processing_time': time.time() - start_time,
+                'limit': 100
             }
 
         # Get county and state info
@@ -295,8 +296,9 @@ def run_headless(**search_params):
                 'file_name': gpkg_filename,
                 'csv_file_path': gcs_result['csv_url'],
                 'csv_file_name': csv_filename,
-                'parcel_data': df_clean.head(100).to_dict('records'),  # Use cleaned data
-                'total_records': len(df),                'county_name': county_name,
+                'parcel_data': df_clean.to_dict('records'),  # Use cleaned data
+                'total_records': len(df),
+                'county_name': county_name,
                 'state_abbr': state_abbr,
                 'processing_time': round(processing_time, 2),
                 'search_id': pipeline_id,
@@ -345,12 +347,14 @@ def execute_reportall_search(county_id, search_criteria):
 
         # Build API request with correct parameter names
         api_params = {
-            'client': api_key,  # ReportAll uses 'client', not 'api_key'
-            'v': api_version,  # ReportAll uses 'v', not 'version'
+            'client': api_key,
+            'v': api_version,
             'county_id': county_id,
-            'region': 'county',  # Required by ReportAll API
-            'attribute': 'acreage',  # Required by ReportAll API
-            'format': 'json'
+            'region': 'county',
+            'attribute': 'acreage',
+            'format': 'json',
+            'rpp': 1000,  # ✅ CORRECT PARAMETER NAME
+            'acreage_min': search_criteria['acreage_min']
         }
 
         # Add search criteria to API params
@@ -381,6 +385,15 @@ def execute_reportall_search(county_id, search_criteria):
 
         if response.status_code == 200:
             data = response.json()
+
+            logger.info(f"🔍 API Request URL: {response.url}")
+            logger.info(f"🔍 Request params sent: {api_params}")
+
+            # Add this right after data = response.json():
+            with open('/tmp/api_response_debug.json', 'w') as f:
+                json.dump(data, f, indent=2)
+            logger.info(f"🔍 Full API response saved to /tmp/api_response_debug.json")
+
 
             # Process the ReportAll API response format
             if data.get('status') == 'OK':
