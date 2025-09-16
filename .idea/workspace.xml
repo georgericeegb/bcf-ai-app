@@ -5,34 +5,19 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3610a289-6580-45c1-bc59-dd4045d93c72" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/services/state_analysis_cache.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/app-copy.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/app_minimal.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/docker.minimal" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/old_requirements.tx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/services/biquery_counties.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/crm_api_debug_script.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/crm_debug_payload.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/csv_crm_debug_test.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/csv_debug_script.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug_field_processing.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/diagnose_csv.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/field_type_tester.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/monday_payload_debug_1755726310.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/monday_payload_debug_1755726313.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/monday_payload_debug_1755726316.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/monday_payload_debug_1755726319.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/monday_payload_debug_1755726322.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/monday_payload_debug_1755726325.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/cloudbuild.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/cloudbuild.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/services/ai_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/ai_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/crm_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/crm_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/simple_payload_inspector.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/templates/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/templates/test_ml_display.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_crm_import.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_fixed_crm.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_ml_integration.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_ml_response.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_payload_fix.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/verify_env_setup.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/services/census_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/census_api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/login.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/login.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -73,16 +58,16 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "DefaultHtmlFileTemplate": "HTML File",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "C:/Users/georg/BCF_Dev_Land/templates"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;DefaultHtmlFileTemplate&quot;: &quot;HTML File&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/georg/BCF_Dev_Land/templates&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\georg\BCF_Dev_Land\templates" />

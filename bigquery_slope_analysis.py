@@ -67,7 +67,7 @@ def clean_dataframe_for_json(df):
 
     return df
 
-def run_headless_fixed(
+def run_headless(
         input_file_path: str,
         max_slope_degrees: float = 15.0,
         output_bucket: str = 'bcfparcelsearchrepository',
@@ -145,6 +145,9 @@ def run_headless_fixed(
             # Check if the comprehensive function exists, otherwise use fallback
             try:
                 all_parcels_with_slopes = perform_slope_analysis_comprehensive(client, parcel_gdf, max_slope_degrees)
+                if all_parcels_with_slopes is not None:
+                    all_parcels_with_slopes = merge_slope_with_original_data(parcel_gdf, all_parcels_with_slopes)
+                    logger.info("Merged slope results with original parcel data")
             except NameError:
                 logger.warning("Comprehensive function not found, using fallback...")
                 all_parcels_with_slopes = generate_comprehensive_fallback_results(parcel_gdf, max_slope_degrees)
@@ -676,6 +679,34 @@ def create_demo_slope_grid(client: bigquery.Client, table_id: str, bounds) -> bo
         return False
 
 
+def merge_slope_with_original_data(original_gdf: gpd.GeoDataFrame,
+                                   slope_results_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Merge slope results with original data to preserve all fields including transmission"""
+
+    # Keep all original data
+    enhanced_gdf = original_gdf.copy()
+
+    # Log transmission fields before merge
+    tx_fields = [col for col in enhanced_gdf.columns if 'tx_' in col.lower()]
+    logger.info(f"Before merge - transmission fields: {tx_fields}")
+    for field in tx_fields:
+        non_null = enhanced_gdf[field].notna().sum()
+        logger.info(f"  {field}: {non_null} non-null values")
+
+    # Merge slope data by parcel_id
+    if len(slope_results_gdf) > 0:
+        slope_cols = [col for col in slope_results_gdf.columns
+                      if col not in ['geometry', 'parcel_id'] + list(original_gdf.columns)]
+
+        enhanced_gdf = enhanced_gdf.merge(
+            slope_results_gdf[['parcel_id'] + slope_cols],
+            on='parcel_id',
+            how='left'
+        )
+
+    return enhanced_gdf
+
+
 def perform_slope_analysis(client: bigquery.Client, parcel_gdf: gpd.GeoDataFrame, slope_threshold: float) -> Optional[
     gpd.GeoDataFrame]:
     """Perform slope analysis using BigQuery spatial queries."""
@@ -1120,7 +1151,11 @@ def perform_slope_analysis_comprehensive(client: bigquery.Client, parcel_gdf: gp
         # Prepare parcel data for BigQuery - KEEP IN WGS84
         parcel_df = parcel_gdf.copy()
 
-        # Convert geometry to WKT for BigQuery (already in WGS84)
+        # Log what fields we're preserving
+        logger.info(f"Original parcel columns: {list(parcel_df.columns)}")
+        tx_fields = [col for col in parcel_df.columns if 'tx_' in col.lower() or 'transmission' in col.lower()]
+        logger.info(f"Preserving transmission fields: {tx_fields}")
+
         parcel_df['geometry_wkt'] = parcel_df['geometry'].apply(lambda geom: geom.wkt)
         parcel_df = parcel_df.drop(columns=['geometry'])
 

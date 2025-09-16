@@ -163,29 +163,37 @@ def get_county_fips(county_name):
     return None
 
 
-def get_counties_for_state(state_abbr):
-    """Get list of counties for a state with error handling"""
-    if not state_abbr:
+def get_counties_for_state(state_code):
+    """Get counties for a state from the counties file"""
+    try:
+        import os
+        import json
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        counties_file = os.path.join(current_dir, 'counties-trimmed.json')
+
+        if not os.path.exists(counties_file):
+            return []
+
+        with open(counties_file, 'r') as f:
+            all_counties = json.load(f)
+
+        # Filter for the specific state
+        state_counties = [
+            {
+                'name': county.get('county', '').replace(' County', ''),
+                'fips': county.get('fips', ''),
+                'full_name': county.get('county', '')
+            }
+            for county in all_counties
+            if county.get('state') == state_code.upper()
+        ]
+
+        return state_counties
+
+    except Exception as e:
+        print(f"Error loading counties: {e}")
         return []
-
-    if not STATE_COUNTIES_MAP:
-        print("WARNING: State counties mapping not loaded")
-        return []
-
-    # Try exact match
-    counties = STATE_COUNTIES_MAP.get(state_abbr, [])
-    if counties:
-        return counties
-
-    # Try case-insensitive search
-    for state, county_list in STATE_COUNTIES_MAP.items():
-        if state.lower() == state_abbr.lower():
-            return county_list
-
-    print(f"WARNING: No counties found for state: '{state_abbr}'")
-    print(f"Available states: {list(STATE_COUNTIES_MAP.keys())}")
-    return []
-
 
 def get_state_name_from_abbr(state_abbr):
     """Convert state abbreviation to full name"""

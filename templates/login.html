@@ -93,7 +93,7 @@
             cursor: pointer;
         }
 
-        .btn-login:hover {
+        .btn-login:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
         }
@@ -127,6 +127,11 @@
             padding: 1rem;
             margin-top: 1.5rem;
             font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .demo-credentials:hover {
+            background-color: #e9ecef;
         }
 
         .demo-credentials h6 {
@@ -155,13 +160,8 @@
             </div>
 
             <div class="login-body">
-                <form id="loginForm" method="POST">
-                    {% if error %}
-                    <div class="alert alert-danger">
-                        <i class="fas fa-exclamation-circle"></i>
-                        {{ error }}
-                    </div>
-                    {% endif %}
+                <form id="loginForm">
+                    <div id="errorContainer"></div>
 
                     <div class="form-group">
                         <label for="username">Username</label>
@@ -174,14 +174,14 @@
                     </div>
 
                     <button type="submit" class="btn-login" id="loginBtn">
-                        <span class="loading-spinner">
+                        <span class="loading-spinner" id="loadingSpinner">
                             <i class="fas fa-spinner fa-spin"></i>
                         </span>
-                        Sign In
+                        <span id="buttonText">Sign In</span>
                     </button>
                 </form>
 
-                <div class="demo-credentials">
+                <div class="demo-credentials" id="demoCredentials">
                     <h6><i class="fas fa-info-circle"></i> Demo Access</h6>
                     <strong>Username:</strong> demo<br>
                     <strong>Password:</strong> bcf2025
@@ -198,26 +198,110 @@
     </div>
 
     <script>
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
+        // Single form handler - no duplicates
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
             const loginBtn = document.getElementById('loginBtn');
-            const spinner = document.querySelector('.loading-spinner');
+            const spinner = document.getElementById('loadingSpinner');
+            const buttonText = document.getElementById('buttonText');
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+
+            // Clear any existing errors
+            clearErrors();
 
             // Show loading state
             loginBtn.disabled = true;
             spinner.style.display = 'inline-block';
-            loginBtn.innerHTML = '<span class="loading-spinner"><i class="fas fa-spinner fa-spin"></i></span>Signing In...';
-        });
+            buttonText.textContent = 'Signing In...';
 
-        // Demo credential auto-fill
-        document.addEventListener('DOMContentLoaded', function() {
-            const demoCredentials = document.querySelector('.demo-credentials');
-            if (demoCredentials) {
-                demoCredentials.addEventListener('click', function() {
-                    document.getElementById('username').value = 'demo';
-                    document.getElementById('password').value = 'bcf2025';
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: usernameInput.value.trim(),
+                        password: passwordInput.value
+                    })
                 });
+
+                // Check if response is actually JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Server returned non-JSON response. Check server logs.');
+                }
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // Successful login
+                    showSuccess('Login successful! Redirecting...');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    // Login failed
+                    showError(result.error || 'Login failed');
+                }
+
+            } catch (error) {
+                console.error('Login error:', error);
+                if (error.message.includes('JSON')) {
+                    showError('Server error: Invalid response format. Please check server status.');
+                } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    showError('Network error: Cannot connect to server. Please try again.');
+                } else {
+                    showError('Login error: ' + error.message);
+                }
+            } finally {
+                // Reset button state
+                loginBtn.disabled = false;
+                spinner.style.display = 'none';
+                buttonText.textContent = 'Sign In';
             }
         });
+
+        // Demo credentials auto-fill
+        document.getElementById('demoCredentials').addEventListener('click', function() {
+            document.getElementById('username').value = 'demo';
+            document.getElementById('password').value = 'bcf2025';
+        });
+
+        function showError(message) {
+            const errorContainer = document.getElementById('errorContainer');
+            errorContainer.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-circle"></i> ${message}
+                </div>
+            `;
+        }
+
+        function showSuccess(message) {
+            const errorContainer = document.getElementById('errorContainer');
+            errorContainer.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i> ${message}
+                </div>
+            `;
+        }
+
+        function clearErrors() {
+            document.getElementById('errorContainer').innerHTML = '';
+        }
+
+        // Add success alert style
+        const style = document.createElement('style');
+        style.textContent = `
+            .alert-success {
+                background-color: #d4edda;
+                color: #155724;
+            }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 </html>

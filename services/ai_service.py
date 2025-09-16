@@ -1,7 +1,11 @@
 # services/ai_service.py - AI Analysis Service with Caching
+import os
+import logging
 import anthropic
+import json
 from typing import Dict, List, Any
-from models.project_config import ProjectConfig
+
+logger = logging.getLogger(__name__)
 
 # Import cache service with error handling
 try:
@@ -9,33 +13,60 @@ try:
 
     CACHE_AVAILABLE = True
 except ImportError as e:
-    print(f"Warning: Cache service not available: {e}")
+    logger.warning(f"Cache service not available: {e}")
     CACHE_AVAILABLE = False
+
+# Import project config with error handling
+try:
+    from models.project_config import ProjectConfig
+
+    PROJECT_CONFIG_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ProjectConfig not available: {e}")
+    PROJECT_CONFIG_AVAILABLE = False
+
+
+    # Create a fallback ProjectConfig class
+    class ProjectConfig:
+        @staticmethod
+        def get_tier_criteria(analysis_level):
+            return ["Resource Quality", "Market Opportunity", "Technical Feasibility", "Regulatory Environment"]
+
+        @staticmethod
+        def get_tier_description(analysis_level):
+            descriptions = {
+                'state': 'State-level market entry and opportunity assessment',
+                'county': 'County-level development feasibility analysis',
+                'site': 'Site-specific technical and commercial evaluation'
+            }
+            return descriptions.get(analysis_level, f"{analysis_level.title()}-level renewable energy analysis")
 
 
 class AIAnalysisService:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key=None):
         try:
-            # Try modern initialization
-            self.client = anthropic.Anthropic(api_key=api_key)
-        except TypeError as e:
-            if "proxies" in str(e):
-                # Fallback for older versions
-                print("Warning: Using older anthropic library version. Consider upgrading.")
-                self.client = anthropic.Client(api_key=api_key)
-            else:
-                raise e
+            self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
 
-        # Initialize cache service if available
-        if CACHE_AVAILABLE:
-            try:
-                self.cache = AIResponseCache()
-                print("✅ Cache service initialized")
-            except Exception as e:
-                print(f"⚠️ Cache service failed to initialize: {e}")
-                self.cache = None
-        else:
+            # Initialize cache with error handling
             self.cache = None
+            if CACHE_AVAILABLE:
+                try:
+                    self.cache = AIResponseCache()
+                    logger.info("Cache service initialized")
+                except Exception as e:
+                    logger.warning(f"Cache service failed to initialize: {e}")
+                    self.cache = None
+
+            if not self.api_key:
+                logger.warning("No Anthropic API key provided")
+                self.client = None
+            else:
+                # FIXED: Remove any incompatible parameters like 'proxies'
+                client = anthropic.Anthropic(api_key=api_key)
+                logger.info("Anthropic client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Anthropic client: {e}")
+            self.client = None
 
     def recommend_project_variables(self, project_type: str, analysis_level: str, location: str,
                                     selected_criteria: List[str] = None) -> Dict[str, Any]:
@@ -134,6 +165,9 @@ class AIAnalysisService:
 
     def analyze_state_counties(self, state, project_type, counties):
         """Generate comprehensive county rankings for all counties in state"""
+        if not self.client:
+            logger.error("No AI client available")
+            return None
 
         # Get state name for better context
         state_names = {
@@ -151,7 +185,7 @@ class AIAnalysisService:
         state_full_name = state_names.get(state, state)
 
         # Create a comprehensive prompt that ensures all counties get scored
-        county_names = [c['name'] for c in counties]
+        county_names = [c.get('name', f'County_{i}') for i, c in enumerate(counties)]
 
         prompt = f"""
         You are a renewable energy market analyst. Analyze and rank ALL counties in {state_full_name} for {project_type} energy development potential.
@@ -202,18 +236,17 @@ class AIAnalysisService:
         """
 
         try:
-            logger.info(f"🤖 Generating comprehensive county rankings for {state} - {project_type}")
+            logger.info(f"Generating comprehensive county rankings for {state} - {project_type}")
 
             response = self.client.messages.create(
-                model="claude-3-sonnet-20240229",
+                model="claude-3-haiku-20240307",  # Use haiku for faster response
                 max_tokens=6000,  # Increased for full county list
-                system="You are an expert renewable energy market analyst with deep knowledge of state and local energy policies, grid infrastructure, and development conditions. Provide comprehensive, data-driven county rankings.",
                 messages=[{"role": "user", "content": prompt}]
             )
 
             # Parse JSON response
             analysis_text = response.content[0].text
-            logger.debug(f"📝 AI Response: {analysis_text[:500]}...")
+            logger.info(f"AI Response received: {len(analysis_text)} characters")
 
             # Extract JSON from response
             import re
@@ -230,9 +263,10 @@ class AIAnalysisService:
                         county_name = ranking.get('name', '')
                         # Match with our county list
                         for county in counties:
-                            if county['name'].lower() in county_name.lower() or county_name.lower() in county[
-                                'name'].lower():
-                                ranking['fips'] = county['fips']
+                            if county.get('name',
+                                          '').lower() in county_name.lower() or county_name.lower() in county.get(
+                                    'name', '').lower():
+                                ranking['fips'] = county.get('fips', f'{state}999')
                                 break
 
                     # If AI didn't return all counties, add the missing ones with default scores
@@ -240,11 +274,12 @@ class AIAnalysisService:
                     missing_counties = []
 
                     for county in counties:
-                        if county['name'].lower() not in returned_names and not any(
-                                county['name'].lower() in name for name in returned_names):
+                        county_name = county.get('name', '')
+                        if county_name.lower() not in returned_names and not any(
+                                county_name.lower() in name for name in returned_names):
                             missing_counties.append({
-                                'name': county['name'],
-                                'fips': county['fips'],
+                                'name': county_name,
+                                'fips': county.get('fips', f'{state}999'),
                                 'score': 50,  # Default middle score
                                 'rank': len(returned_counties) + len(missing_counties) + 1,
                                 'strengths': ['Standard grid access', 'Basic infrastructure'],
@@ -266,21 +301,21 @@ class AIAnalysisService:
                     analysis_data['county_rankings'] = all_counties
 
                     logger.info(
-                        f"✅ Generated rankings for {len(all_counties)} counties ({len(returned_counties)} from AI, {len(missing_counties)} added)")
+                        f"Generated rankings for {len(all_counties)} counties ({len(returned_counties)} from AI, {len(missing_counties)} added)")
                     return analysis_data
 
                 except json.JSONDecodeError as e:
-                    logger.error(f"❌ JSON parsing error: {e}")
+                    logger.error(f"JSON parsing error: {e}")
                     logger.error(f"Raw response: {analysis_text}")
                     return None
 
             else:
-                logger.error("❌ Failed to extract JSON from AI response")
+                logger.error("Failed to extract JSON from AI response")
                 logger.error(f"Raw response: {analysis_text}")
                 return None
 
         except Exception as e:
-            logger.error(f"❌ AI county analysis error: {e}")
+            logger.error(f"AI county analysis error: {e}")
             return None
 
     def analyze_focus_areas(self, project_type: str, analysis_level: str, location: str,

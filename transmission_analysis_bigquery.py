@@ -27,55 +27,36 @@ logger = logging.getLogger(__name__)
 
 def run_headless(
         input_file_path: str,
-        buffer_distance_miles: float = 1.0,
+        buffer_distance_miles: float = 2.0,
         output_bucket: str = 'bcfparcelsearchrepository',
         project_id: str = 'bcfparcelsearchrepository',
         output_prefix: str = 'Analysis_Results/Transmission/',
         **kwargs
 ) -> Dict[str, Any]:
     """
-    Run transmission line analysis in headless mode for web API
-
-    Args:
-        input_file_path: GCS path to input parcel file (gs://...)
-        buffer_distance_miles: Buffer distance around transmission lines in miles
-        output_bucket: GCS bucket for output files
-        project_id: Google Cloud project ID
-        output_prefix: Prefix for output files in bucket
-
-    Returns:
-        Dict with status, results, and file paths
+    Enhanced run_headless with better error handling and performance
     """
-
     start_time = time.time()
     logger.info(f"🔌 Starting transmission analysis for {input_file_path}")
     logger.info(f"Buffer distance: {buffer_distance_miles} miles")
 
     try:
-        # Validate inputs
+        # Input validation
         if not input_file_path.startswith('gs://'):
             return {
                 'status': 'error',
                 'message': 'Input file must be a GCS path (gs://...)'
             }
 
-        if buffer_distance_miles <= 0 or buffer_distance_miles > 10:
-            return {
-                'status': 'error',
-                'message': 'Buffer distance must be between 0 and 10 miles'
-            }
-
-        # Extract location info from file path
+        # Extract location info
         location_info = extract_location_from_path(input_file_path)
         state = location_info.get('state', 'Unknown')
         county_name = location_info.get('county_name', 'Unknown')
 
-        logger.info(f"Extracted location: {state}, {county_name}")
+        logger.info(f"Processing: {county_name}, {state}")
 
-        # Download input file from GCS
-        logger.info("📥 Downloading input file from GCS...")
+        # Download input file
         local_input_path = download_from_gcs(input_file_path)
-
         if not local_input_path:
             return {
                 'status': 'error',
@@ -83,10 +64,44 @@ def run_headless(
             }
 
         try:
-            # Load parcel data
-            logger.info("📊 Loading parcel data...")
-            parcels_gdf = gpd.read_file(local_input_path)
-            logger.info(f"Loaded {len(parcels_gdf)} parcels for analysis")
+            # Load and validate parcel data - FIXED FOR CSV
+            # In the run_headless function, replace the CSV loading section:
+            if local_input_path.endswith('.csv'):
+                logger.info("Loading CSV file with geometry handling...")
+                import pandas as pd
+                from shapely import wkt
+
+                df = pd.read_csv(local_input_path)
+                logger.info(f"Loaded CSV with {len(df)} rows")
+
+                # Check available columns
+                logger.info(f"Available columns: {list(df.columns)}")
+
+                # Look for geometry columns with multiple possible names
+                geometry_col = None
+                possible_geom_cols = ['geom_as_wkt', 'geometry', 'geom', 'wkt', 'the_geom', 'shape']
+
+                for col in possible_geom_cols:
+                    if col in df.columns:
+                        geometry_col = col
+                        logger.info(f"Found geometry column: {col}")
+                        break
+
+                if geometry_col:
+                    logger.info(f"Converting {geometry_col} to geometry...")
+                    df['geometry'] = df[geometry_col].apply(wkt.loads)
+                    parcels_gdf = gpd.GeoDataFrame(df, geometry='geometry')
+                    parcels_gdf = parcels_gdf.set_crs('EPSG:4326')
+                    logger.info(f"Created GeoDataFrame with CRS: {parcels_gdf.crs}")
+                else:
+                    logger.error(f"No geometry column found. Available columns: {list(df.columns)}")
+                    return {'status': 'error', 'message': f'No geometry column found. Available: {list(df.columns)}'}
+
+            # CRITICAL FIX: Handle missing CRS for CSV files
+            if parcels_gdf.crs is None:
+                logger.warning(f"No CRS found in file, assuming WGS84 (EPSG:4326)")
+                parcels_gdf = parcels_gdf.set_crs('EPSG:4326')
+                logger.info(f"Set CRS to EPSG:4326 for {len(parcels_gdf)} parcels")
 
             if len(parcels_gdf) == 0:
                 return {
@@ -94,27 +109,21 @@ def run_headless(
                     'message': 'Input file contains no parcel data'
                 }
 
-            # Initialize transmission analyzer
-            logger.info("🔌 Initializing transmission analyzer...")
+            # Initialize analyzer with optimized settings
             analyzer = MultiTransmissionAnalyzer(project_id=project_id)
 
-            # Run the analysis
-            logger.info("🚀 Running transmission line analysis...")
+            # Run analysis with optimized parameters
             enhanced_parcels = analyzer.analyze_parcels_multi_lines(
                 parcels_gdf=parcels_gdf,
                 max_distance_miles=buffer_distance_miles,
-                max_lines_per_parcel=None  # Get all lines within distance
+                max_lines_per_parcel=10  # Limit for performance
             )
 
-            logger.info(f"✅ Analysis completed for {len(enhanced_parcels)} parcels")
-
-            # Calculate result statistics
+            # Calculate statistics
             parcels_processed = len(enhanced_parcels)
             parcels_near_transmission = len(enhanced_parcels[enhanced_parcels['tx_lines_count'] > 0])
-            parcels_intersecting = len(enhanced_parcels[enhanced_parcels['tx_lines_intersecting'] > 0])
 
-            # Save results to GCS
-            logger.info("💾 Saving results to GCS...")
+            # Save results
             save_result = save_multi_transmission_results(
                 parcels_gdf=enhanced_parcels,
                 input_file_path=input_file_path,
@@ -124,83 +133,33 @@ def run_headless(
                 county_name=county_name
             )
 
-            # Calculate processing time
-            processing_time = time.time() - start_time
-
-            # Prepare result
-            result = {
+            # Return success result
+            return {
                 'status': 'success',
-                'message': f'Transmission analysis completed successfully',
+                'message': 'Transmission analysis completed successfully',
                 'parcels_processed': parcels_processed,
                 'parcels_near_transmission': parcels_near_transmission,
-                'parcels_intersecting': parcels_intersecting,
-                'buffer_distance_miles': buffer_distance_miles,
                 'output_file_path': save_result['gpkg_url'],
-                'output_csv_path': save_result['csv_url'],
-                'processing_time': f"{processing_time:.2f} seconds",
-                'analysis_parameters': {
-                    'buffer_distance_miles': buffer_distance_miles,
-                    'input_file': input_file_path,
-                    'output_file': save_result['gpkg_url'],
-                    'state': state,
-                    'county': county_name
-                },
+                'processing_time': f"{time.time() - start_time:.2f} seconds",
                 'transmission_statistics': {
                     'total_parcels': parcels_processed,
                     'parcels_with_nearby_lines': parcels_near_transmission,
-                    'parcels_intersecting_lines': parcels_intersecting,
-                    'percentage_near_transmission': round((parcels_near_transmission / parcels_processed) * 100, 1) if parcels_processed > 0 else 0,
-                    'percentage_intersecting': round((parcels_intersecting / parcels_processed) * 100, 1) if parcels_processed > 0 else 0
+                    'percentage_near_transmission': round((parcels_near_transmission / parcels_processed) * 100,
+                                                          1) if parcels_processed > 0 else 0
                 }
             }
 
-            # Add detailed statistics if available
-            if parcels_near_transmission > 0:
-                tx_parcels = enhanced_parcels[enhanced_parcels['tx_lines_count'] > 0]
-
-                result['transmission_statistics'].update({
-                    'avg_lines_per_parcel': float(tx_parcels['tx_lines_count'].mean()),
-                    'max_lines_per_parcel': int(tx_parcels['tx_lines_count'].max()),
-                    'avg_distance_to_nearest': float(tx_parcels['tx_nearest_distance'].mean()),
-                    'closest_transmission_distance': float(tx_parcels['tx_nearest_distance'].min()),
-                    'max_voltage_found': float(tx_parcels['tx_max_voltage'].max()) if tx_parcels['tx_max_voltage'].notna().any() else None
-                })
-
-            logger.info(f"🎯 Analysis Summary:")
-            logger.info(f"   • {parcels_processed} parcels processed")
-            logger.info(f"   • {parcels_near_transmission} parcels near transmission lines ({result['transmission_statistics']['percentage_near_transmission']}%)")
-            logger.info(f"   • {parcels_intersecting} parcels intersecting transmission lines ({result['transmission_statistics']['percentage_intersecting']}%)")
-            logger.info(f"   • Processing time: {processing_time:.2f} seconds")
-            logger.info(f"   • Output file: {save_result['gpkg_url']}")
-
-            return result
-
         finally:
-            # Clean up downloaded file
-            try:
-                if local_input_path and os.path.exists(local_input_path):
-                    os.unlink(local_input_path)
-                    logger.info("🧹 Cleaned up temporary input file")
-            except Exception as e:
-                logger.warning(f"Failed to cleanup temp file: {e}")
+            # Cleanup
+            if local_input_path and os.path.exists(local_input_path):
+                os.unlink(local_input_path)
 
     except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"❌ Transmission analysis failed: {str(e)}")
-
-        # Include more detailed error information
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"Full error traceback: {error_details}")
-
         return {
             'status': 'error',
             'message': f'Transmission analysis failed: {str(e)}',
-            'processing_time': f"{processing_time:.2f} seconds",
-            'error_details': error_details,
-            'input_file': input_file_path
+            'processing_time': f"{time.time() - start_time:.2f} seconds"
         }
-
 
 # Keep all your existing classes and functions exactly as they are:
 # - MultiTransmissionAnalyzer class
@@ -276,8 +235,8 @@ class MultiTransmissionAnalyzer:
         return enhanced_gdf
 
     def _process_parcel_batch(self, batch_parcels: gpd.GeoDataFrame,
-                             max_distance_miles: float,
-                             max_lines_per_parcel: Optional[int]) -> pd.DataFrame:
+                              max_distance_miles: float,
+                              max_lines_per_parcel: Optional[int]) -> pd.DataFrame:
         """Process a batch of parcels against transmission lines."""
 
         # Extract parcel data with better geometry handling
@@ -301,6 +260,16 @@ class MultiTransmissionAnalyzer:
                     # Get centroid for fallback distance calculation
                     centroid = geom.centroid
 
+                    # ADD COORDINATE DEBUGGING
+                    logger.info(f"🗺️ Parcel {idx} coordinates: {centroid.x:.6f}, {centroid.y:.6f}")
+
+                    # Check if coordinates look correct for Blair County, PA
+                    if -79.0 <= centroid.x <= -78.0 and 40.0 <= centroid.y <= 41.0:
+                        logger.info(f"✅ Parcel {idx} coordinates look correct for Blair County, PA")
+                    else:
+                        logger.warning(
+                            f"⚠️ Parcel {idx} coordinates might be wrong: {centroid.x:.6f}, {centroid.y:.6f}")
+
                     parcels_data.append({
                         'original_index': idx,
                         'parcel_id': parcel.get('parcel_id', f'parcel_{idx}'),
@@ -316,126 +285,107 @@ class MultiTransmissionAnalyzer:
         if not parcels_data:
             return pd.DataFrame()
 
+        # Log what we're about to query
+        logger.info(f"🔍 About to query BigQuery with {len(parcels_data)} parcels")
+        logger.info(f"🔍 Buffer distance: {max_distance_miles} miles")
+
         # Build and execute query
         query = self._build_optimized_batch_query(parcels_data, max_distance_miles, max_lines_per_parcel)
+
+        # Log query for debugging
+        logger.info(f"🔍 Query preview: {query[:500]}...")
 
         try:
             logger.info(f"Executing BigQuery for {len(parcels_data)} parcels...")
             query_job = self.client.query(query)
             results_df = query_job.result().to_dataframe()
 
-            logger.info(f"BigQuery returned {len(results_df)} parcel-transmission relationships for this batch")
+            logger.info(f"📊 BigQuery returned {len(results_df)} parcel-transmission relationships")
             return results_df
 
         except Exception as e:
             logger.error(f"BigQuery batch analysis failed: {str(e)}")
-            logger.error(f"Query preview: {query[:1000]}...")
             return pd.DataFrame()
 
-    def _build_optimized_batch_query(self, parcels_data: List[Dict],
-                                   max_distance_miles: float,
-                                   max_lines_per_parcel: Optional[int]) -> str:
-        """Build optimized SQL query for batch processing."""
 
-        # Create parcel UNION with proper geometry handling
-        parcel_unions = []
+    def _build_optimized_batch_query(self, parcels_data: List[Dict],
+                                     max_distance_miles: float,
+                                     max_lines_per_parcel: Optional[int]) -> str:
+        """Build spatial query with FIXED voltage filtering"""
+
+        # Create parcel points
+        parcel_points = []
         for i, parcel in enumerate(parcels_data):
-            parcel_unions.append(f"""
+            parcel_points.append(f"""
             SELECT 
                 {parcel['original_index']} as parcel_index,
                 '{parcel['parcel_id']}' as parcel_id,
-                ST_GeogFromText('{parcel['geometry_wkt']}') as parcel_geometry,
-                ST_GeogPoint({parcel['centroid_lon']}, {parcel['centroid_lat']}) as parcel_centroid
+                ST_GeogPoint({parcel['centroid_lon']}, {parcel['centroid_lat']}) as parcel_point
             """)
 
-        parcels_cte = " UNION ALL ".join(parcel_unions)
-
-        # Distance in meters for BigQuery
+        parcels_cte = " UNION ALL ".join(parcel_points)
         buffer_meters = max_distance_miles * 1609.34
 
-        # Optimized query with proper distance calculation and ranking
-        if max_lines_per_parcel:
-            limit_clause = f"AND line_rank <= {max_lines_per_parcel}"
-        else:
-            limit_clause = ""
-
+        # CRITICAL FIX: Remove problematic voltage filtering
         query = f"""
         WITH parcels AS (
-            {parcels_cte}
+          {parcels_cte}
         ),
         parcel_transmission_analysis AS (
-            SELECT 
-                p.parcel_index,
-                p.parcel_id,
-                t.line_id,
-                t.owner as tx_owner,
-                CAST(t.voltage_kv AS FLOAT64) as tx_volt,
-                t.voltage_class as tx_voltage_class,
-                t.line_type as tx_type,
-                t.status as tx_status,
-                
-                -- Distance calculation (boundary to line)
-                CASE 
-                    WHEN ST_Intersects(p.parcel_geometry, t.geometry) THEN 0.0
-                    ELSE ST_Distance(p.parcel_geometry, t.geometry) / 1609.34
-                END as tx_dist,
-                
-                -- Intersection flag
-                ST_Intersects(p.parcel_geometry, t.geometry) as intersects_parcel,
-                
-                -- Centroid distance for comparison
-                ST_Distance(p.parcel_centroid, t.geometry) / 1609.34 as centroid_dist,
-                
-                -- Line characteristics
-                ST_Length(t.geometry) / 1609.34 as line_length_miles,
-                
-                -- Ranking by distance (intersecting first, then closest)
-                ROW_NUMBER() OVER (
-                    PARTITION BY p.parcel_index 
-                    ORDER BY 
-                        CASE WHEN ST_Intersects(p.parcel_geometry, t.geometry) THEN 0 ELSE 1 END,
-                        ST_Distance(p.parcel_geometry, t.geometry)
-                ) as line_rank,
-                
-                -- Proximity categorization
-                CASE 
-                    WHEN ST_Intersects(p.parcel_geometry, t.geometry) THEN 'INTERSECTS'
-                    WHEN ST_Distance(p.parcel_geometry, t.geometry) / 1609.34 <= 0.25 THEN 'VERY_CLOSE'
-                    WHEN ST_Distance(p.parcel_geometry, t.geometry) / 1609.34 <= 0.5 THEN 'CLOSE'
-                    ELSE 'WITHIN_BUFFER'
-                END as proximity_category
-                
-            FROM parcels p
-            CROSS JOIN `{self.transmission_table}` t
-            WHERE 
-                -- Spatial filter: within buffer OR intersecting
-                (ST_DWithin(p.parcel_geometry, t.geometry, {buffer_meters}) 
-                 OR ST_Intersects(p.parcel_geometry, t.geometry))
-                -- Additional filters for data quality
-                AND t.geometry IS NOT NULL
+          SELECT 
+              p.parcel_index,
+              p.parcel_id,
+              t.line_id,
+              COALESCE(t.owner, 'Unknown') as tx_owner,
+              -- FIXED: Handle all voltage values, convert placeholders
+              CASE 
+                  WHEN COALESCE(t.voltage_kv, 0) >= 999999 THEN 115.0
+                  WHEN COALESCE(t.voltage_kv, 0) <= 0 THEN 115.0
+                  ELSE CAST(COALESCE(t.voltage_kv, 0) AS FLOAT64)
+              END as tx_volt,
+              COALESCE(t.voltage_class, 'Unknown') as tx_voltage_class,
+              COALESCE(t.line_type, 'Unknown') as tx_type,
+              COALESCE(t.status, 'Unknown') as tx_status,
+              ST_Distance(p.parcel_point, t.geometry) / 1609.34 as tx_dist,
+              CASE 
+                  WHEN ST_Distance(p.parcel_point, t.geometry) = 0 THEN true
+                  ELSE false
+              END as intersects_parcel,
+              ROW_NUMBER() OVER (
+                  PARTITION BY p.parcel_index 
+                  ORDER BY ST_Distance(p.parcel_point, t.geometry)
+              ) as line_rank
+          FROM parcels p
+          CROSS JOIN `{self.transmission_table}` t
+          WHERE 
+              t.geometry IS NOT NULL
+              AND ST_DWithin(p.parcel_point, t.geometry, {buffer_meters})
         )
         SELECT 
-            parcel_index,
-            parcel_id,
-            line_id,
-            tx_owner,
-            tx_volt,
-            tx_voltage_class,
-            tx_type,
-            tx_status,
-            tx_dist,
-            intersects_parcel,
-            centroid_dist,
-            line_length_miles,
-            line_rank,
-            proximity_category
+          parcel_index,
+          parcel_id,
+          line_id,
+          tx_owner,
+          tx_volt,
+          tx_voltage_class,
+          tx_type,
+          tx_status,
+          ROUND(tx_dist, 4) as tx_dist,
+          intersects_parcel,
+          line_rank,
+          -- ADD MISSING PROXIMITY CATEGORY
+          CASE 
+              WHEN tx_dist <= 0.25 THEN 'VERY_CLOSE'
+              WHEN tx_dist <= 0.5 THEN 'CLOSE'
+              ELSE 'WITHIN_BUFFER'
+          END as proximity_category
         FROM parcel_transmission_analysis
-        WHERE tx_dist <= {max_distance_miles}  -- Final distance filter
-        {limit_clause}
+        WHERE tx_dist <= {max_distance_miles}
         ORDER BY parcel_index, line_rank
         """
 
         return query
+
 
     def _process_multi_line_results(self, original_gdf: gpd.GeoDataFrame,
                                    results_df: pd.DataFrame) -> gpd.GeoDataFrame:
@@ -540,12 +490,14 @@ class MultiTransmissionAnalyzer:
             'tx_lines_within_quarter_mile': within_quarter,
             'tx_lines_within_half_mile': within_half,
 
-            # Distance statistics
+            # FIXED: Return field names that match UI expectations
+            'tx_distance_miles': nearest_dist,  # UI expects this name
+            'tx_voltage_kv': max_voltage,  # UI expects this name
+
+            # Keep legacy names for compatibility
             'tx_nearest_distance': nearest_dist,
             'tx_farthest_distance': farthest_dist,
             'tx_avg_distance': avg_dist,
-
-            # Voltage statistics
             'tx_max_voltage': max_voltage,
             'tx_min_voltage': min_voltage,
             'tx_voltage_classes': ', '.join([str(c) for c in unique_classes if c != 'Unknown']),
