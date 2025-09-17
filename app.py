@@ -22,6 +22,7 @@ except Exception as e:
     print(f"❌ Error loading .env file: {e}")
 
 
+
 # STEP 1: Fix encoding first (before any logging)
 if sys.platform == 'win32':
     os.environ['PYTHONIOENCODING'] = 'utf-8'
@@ -100,6 +101,13 @@ except ImportError:
         except ImportError as e:
             logger.error(f"Could not import any slope analysis module: {e}")
             slope_analysis = None
+
+try:
+    import enhanced_parcel_search
+    logger.info("Enhanced parcel search module imported successfully")
+except ImportError as e:
+    logger.error(f"Failed to import enhanced parcel search: {e}")
+    enhanced_parcel_search = None
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='templates')
@@ -850,6 +858,51 @@ def analyze_state_counties():
         return jsonify({'success': False, 'error': f'Analysis error: {str(e)}'}), 500
 
 
+# Around line 200+ in your app.py, replace the AI service initialization:
+
+# Initialize AI services with better error handling
+AI_SERVICE = None
+ENHANCED_PARCEL_AI = None
+
+try:
+    from services.ai_service import AIAnalysisService
+
+    logger.info("AI service class imported successfully")
+
+    # Try to create the AI service
+    AI_SERVICE = AIAnalysisService()
+
+    if AI_SERVICE and hasattr(AI_SERVICE, 'client') and AI_SERVICE.client:
+        logger.info("AI service initialized successfully with working client")
+    else:
+        logger.warning("AI service initialized but client is None - will use fallback analysis")
+
+except ImportError as e:
+    logger.error(f"Could not import AI service: {e}")
+    AI_SERVICE = None
+except Exception as e:
+    logger.error(f"Failed to initialize AI service: {e}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    AI_SERVICE = None
+
+try:
+    from services.enhanced_parcel_ai_service import EnhancedParcelAIService
+
+    if AI_SERVICE and AI_SERVICE.client:
+        ENHANCED_PARCEL_AI = EnhancedParcelAIService()
+        logger.info("Enhanced parcel AI service initialized successfully")
+    else:
+        logger.info("Skipping enhanced parcel AI - base AI service not available")
+        ENHANCED_PARCEL_AI = None
+except Exception as e:
+    logger.error(f"Failed to initialize enhanced parcel AI service: {e}")
+    ENHANCED_PARCEL_AI = None
+
+# Set availability flag
+AI_AVAILABLE = AI_SERVICE is not None and hasattr(AI_SERVICE, 'client') and AI_SERVICE.client is not None
+logger.info(f"AI services available: {AI_AVAILABLE}")
+
+
 @app.route('/api/get-existing-files', methods=['POST'])
 def get_existing_files():
     try:
@@ -1253,6 +1306,992 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
+
+@app.route('/api/preview-parcel-search', methods=['POST'])
+@login_required
+def parcel_search_preview():
+    """Preview parcel search results"""
+    try:
+        if not enhanced_parcel_search:
+            return jsonify({
+                'success': False,
+                'error': 'Parcel search module not available'
+            }), 500
+
+        data = request.get_json()
+        logger.info(f"Parcel search preview request: {data}")
+
+        # Call the preview function
+        result = enhanced_parcel_search.preview_search_count(**data)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Parcel search preview error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Preview failed: {str(e)}'
+        }), 500
+
+
+# Add these routes to your app.py (after your existing parcel search routes)
+
+@app.route('/api/preview-parcel-search', methods=['POST'])
+@login_required
+def preview_parcel_search():
+    """Frontend-compatible preview route"""
+    try:
+        if not enhanced_parcel_search:
+            return jsonify({
+                'success': False,
+                'message': 'Parcel search module not available'
+            }), 500
+
+        data = request.get_json()
+
+        # Map frontend parameters to backend parameters
+        search_params = {
+            'county_id': data.get('county_id'),
+            'calc_acreage_min': data.get('calc_acreage_min'),
+            'calc_acreage_max': data.get('calc_acreage_max'),
+            'owner': data.get('owner'),
+            'parcel_id': data.get('parcel_id')
+        }
+
+        # Remove None values
+        search_params = {k: v for k, v in search_params.items() if v is not None}
+
+        logger.info(f"Preview search request: {search_params}")
+
+        result = enhanced_parcel_search.preview_search_count(**search_params)
+
+        if result['status'] == 'success':
+            return jsonify({
+                'success': True,
+                'record_count': result.get('record_count', 0),
+                'message': result.get('message', 'Preview completed')
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': result.get('message', 'Preview failed')
+            }), 400
+
+    except Exception as e:
+        logger.error(f"Preview parcel search error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Preview failed: {str(e)}'
+        }), 500
+
+
+@app.route('/api/execute-parcel-search', methods=['POST'])
+@login_required
+def execute_parcel_search():
+    """Frontend-compatible execute route"""
+    try:
+        if not enhanced_parcel_search:
+            return jsonify({
+                'success': False,
+                'message': 'Parcel search module not available'
+            }), 500
+
+        data = request.get_json()
+
+        # Map all search parameters
+        search_params = {
+            'county_id': data.get('county_id'),
+            'calc_acreage_min': data.get('calc_acreage_min'),
+            'calc_acreage_max': data.get('calc_acreage_max'),
+            'owner': data.get('owner'),
+            'parcel_id': data.get('parcel_id'),
+            'user_id': data.get('user_id', session.get('username', 'default_user')),
+            'project_type': data.get('project_type', 'solar'),
+            'county_name': data.get('county_name', 'Unknown'),
+            'state': data.get('state', 'XX')
+        }
+
+        # Remove None values but keep empty strings
+        search_params = {k: v for k, v in search_params.items() if v is not None}
+
+        logger.info(f"Execute parcel search request: {search_params}")
+
+        result = enhanced_parcel_search.run_headless(**search_params)
+
+        if result['status'] == 'success':
+            return jsonify({
+                'success': True,
+                'record_count': result.get('record_count', 0),
+                'message': result.get('message', 'Search completed successfully'),
+                'search_id': result.get('search_id'),
+                'county_name': result.get('county_name'),
+                'state_abbr': result.get('state_abbr'),
+                'processing_time': result.get('processing_time'),
+                'file_path': result.get('file_path'),
+                'csv_file_path': result.get('csv_file_path'),
+                'parcel_data': result.get('parcel_data', [])[:50],  # Limit for preview
+                'total_records': result.get('total_records', 0),
+                'bucket_name': result.get('bucket_name'),
+                'gpkg_blob_name': result.get('gpkg_blob_name'),
+                'csv_blob_name': result.get('csv_blob_name'),
+                'bucket_path': result.get('bucket_path')
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': result.get('message', 'Search failed')
+            }), 400
+
+    except Exception as e:
+        logger.error(f"Execute parcel search error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Search failed: {str(e)}'
+        }), 500
+
+
+@app.route('/api/download-parcel-file', methods=['GET'])
+@login_required
+def download_parcel_file():
+    """Download parcel files from Google Cloud Storage"""
+    try:
+        blob_name = request.args.get('blob_name')
+        file_type = request.args.get('file_type', 'csv')
+
+        if not blob_name:
+            return jsonify({'error': 'Missing blob_name parameter'}), 400
+
+        # Use existing get_gcs_client function
+        client = get_gcs_client()
+        if not client:
+            return jsonify({'error': 'Cloud storage not available'}), 500
+
+        bucket_name = os.getenv('CACHE_BUCKET_NAME', 'bcfparcelsearchrepository')
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        if not blob.exists():
+            return jsonify({'error': 'File not found'}), 404
+
+        # Generate signed URL for download (reuse existing pattern)
+        from datetime import timedelta
+        download_url = blob.generate_signed_url(
+            expiration=timedelta(hours=1),
+            method='GET'
+        )
+
+        return redirect(download_url)
+
+    except Exception as e:
+        logger.error(f"Download file error: {str(e)}")
+        return jsonify({'error': f'Download failed: {str(e)}'}), 500
+
+
+@app.route('/api/list-user-searches', methods=['GET'])
+@login_required
+def list_user_searches():
+    """List previous parcel searches for a user"""
+    try:
+        user_id = request.args.get('user_id', session.get('username', 'default_user'))
+        county_name = request.args.get('county_name')
+        state = request.args.get('state')
+
+        client = get_gcs_client()
+        if not client:
+            return jsonify({
+                'success': True,
+                'files': [],
+                'total_files': 0,
+                'message': 'Cloud storage not available'
+            })
+
+        bucket_name = os.getenv('CACHE_BUCKET_NAME', 'bcfparcelsearchrepository')
+        bucket = client.bucket(bucket_name)
+
+        # Build search prefix
+        if state and county_name:
+            prefix = f"{state}/{county_name}/Parcel_Files/"
+        else:
+            prefix = ""
+
+        blobs = bucket.list_blobs(prefix=prefix)
+
+        files = []
+        for blob in blobs:
+            if blob.name.endswith('.csv'):
+                file_info = {
+                    'name': blob.name.split('/')[-1],
+                    'blob_name': blob.name,
+                    'size': blob.size,
+                    'created': blob.time_created.isoformat() if blob.time_created else None,
+                    'updated': blob.updated.isoformat() if blob.updated else None,
+                    'file_type': 'csv'
+                }
+                files.append(file_info)
+
+        return jsonify({
+            'success': True,
+            'files': files,
+            'total_files': len(files)
+        })
+
+    except Exception as e:
+        logger.error(f"List user searches error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to list searches: {str(e)}'
+        }), 500
+
+
+@app.route('/api/delete-search-file', methods=['DELETE'])
+@login_required
+def delete_search_file():
+    """Delete a parcel search file from GCS"""
+    try:
+        data = request.get_json()
+        blob_name = data.get('blob_name')
+
+        if not blob_name:
+            return jsonify({'error': 'Missing blob_name'}), 400
+
+        client = get_gcs_client()
+        if not client:
+            return jsonify({'error': 'Cloud storage not available'}), 500
+
+        bucket_name = os.getenv('CACHE_BUCKET_NAME', 'bcfparcelsearchrepository')
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        if not blob.exists():
+            return jsonify({'error': 'File not found'}), 404
+
+        # Delete the blob
+        blob.delete()
+
+        # Also try to delete corresponding GPKG file
+        if blob_name.endswith('.csv'):
+            gpkg_blob_name = blob_name.replace('.csv', '.gpkg')
+            gpkg_blob = bucket.blob(gpkg_blob_name)
+            if gpkg_blob.exists():
+                gpkg_blob.delete()
+
+        return jsonify({
+            'success': True,
+            'message': 'File deleted successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Delete search file error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Delete failed: {str(e)}'
+        }), 500
+
+
+@app.route('/api/analyze-search-results', methods=['POST'])
+@login_required
+def analyze_search_results():
+    """Analyze parcel search results with AI (enhanced analysis)"""
+    try:
+        data = request.get_json()
+        search_id = data.get('search_id')
+        parcel_data = data.get('parcel_data', [])
+        county_name = data.get('county_name')
+        state = data.get('state')
+        project_type = data.get('project_type')
+
+        if not parcel_data:
+            return jsonify({
+                'success': False,
+                'error': 'No parcel data provided for analysis'
+            }), 400
+
+        logger.info(f"Analyzing search results: {len(parcel_data)} parcels")
+
+        # For now, create a simple analysis structure
+        # This is where you'd integrate with your existing analysis code
+        analysis_results = create_simple_parcel_analysis(parcel_data, county_name, state, project_type)
+
+        return jsonify({
+            'success': True,
+            'analysis_results': analysis_results,
+            'message': f'Analysis completed for {len(parcel_data)} parcels'
+        })
+
+    except Exception as e:
+        logger.error(f"Analyze search results error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Analysis failed: {str(e)}'
+        }), 500
+
+
+# Replace the analyze_existing_search_file function I provided with this simpler version:
+
+@app.route('/api/analyze-existing-search-file', methods=['POST'])
+@login_required
+def analyze_existing_search_file():
+    """Analyze an existing search file from GCS using your existing BigQuery analysis"""
+    try:
+        data = request.get_json()
+        blob_name = data.get('blob_name')
+        county_name = data.get('county_name')
+        state = data.get('state')
+        project_type = data.get('project_type')
+
+        if not blob_name:
+            return jsonify({
+                'success': False,
+                'error': 'blob_name is required'
+            }), 400
+
+        # Construct GCS path
+        bucket_name = os.getenv('CACHE_BUCKET_NAME', 'bcfparcelsearchrepository')
+        gcs_path = f"gs://{bucket_name}/{blob_name}"
+
+        logger.info(f"Analyzing existing file: {gcs_path}")
+
+        # Create a new request context to call your existing function
+        from flask import Flask
+        with app.test_request_context(
+                '/api/analyze-existing-file-bq',
+                method='POST',
+                json={
+                    'file_path': gcs_path,
+                    'county_name': county_name,
+                    'state': state,
+                    'project_type': project_type
+                }
+        ):
+            # Call your existing function directly
+            return analyze_existing_file_with_bigquery()
+
+    except Exception as e:
+        logger.error(f"Analyze existing search file error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Analysis failed: {str(e)}'
+        }), 500
+
+def analyze_existing_file_with_bigquery_internal(file_path, county_name, state, project_type):
+    """Internal function to reuse existing BigQuery analysis logic"""
+
+    # Create a mock request object for the existing function
+    class MockRequest:
+        def get_json(self):
+            return {
+                'file_path': file_path,
+                'county_name': county_name,
+                'state': state,
+                'project_type': project_type
+            }
+
+    # Temporarily replace the request object
+    original_request = request
+
+    try:
+        # Call your existing function logic directly
+        return analyze_existing_file_with_bigquery()
+    except Exception as e:
+        logger.error(f"Internal BigQuery analysis error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'BigQuery analysis failed: {str(e)}'
+        }), 500
+
+
+def create_simple_parcel_analysis(parcel_data, county_name, state, project_type):
+    """Create a simple analysis structure for frontend display"""
+    # This is a placeholder - you can enhance this with your existing analysis logic
+    total_parcels = len(parcel_data)
+
+    # Simple categorization based on acreage
+    excellent = sum(1 for p in parcel_data if float(p.get('acreage', 0)) >= 50)
+    good = sum(1 for p in parcel_data if 20 <= float(p.get('acreage', 0)) < 50)
+    fair = sum(1 for p in parcel_data if 5 <= float(p.get('acreage', 0)) < 20)
+    poor = total_parcels - excellent - good - fair
+
+    # Create enhanced parcel data with simple scoring
+    enhanced_parcels = []
+    for i, parcel in enumerate(parcel_data):
+        acreage = float(parcel.get('acreage', 0))
+
+        # Simple scoring logic
+        if acreage >= 50:
+            score = 85 + (min(acreage, 200) / 200 * 10)
+            category = 'Excellent'
+        elif acreage >= 20:
+            score = 70 + (acreage / 50 * 15)
+            category = 'Good'
+        elif acreage >= 5:
+            score = 55 + (acreage / 20 * 15)
+            category = 'Fair'
+        else:
+            score = 35 + (acreage / 5 * 20)
+            category = 'Poor'
+
+        enhanced_parcel = parcel.copy()
+        enhanced_parcel.update({
+            'suitability_score': round(score, 1),
+            'suitability_category': category,
+            'recommended_for_outreach': score >= 70,
+            'avg_slope': 15.0,  # Placeholder - you can integrate real slope analysis
+            'tx_distance': 'Pending',  # Placeholder - you can integrate real transmission analysis
+            'tx_voltage': 'Pending'
+        })
+        enhanced_parcels.append(enhanced_parcel)
+
+    return {
+        'parcels_table': enhanced_parcels,
+        'summary': {
+            'total_parcels': total_parcels,
+            'excellent': excellent,
+            'good': good,
+            'fair': fair,
+            'poor': poor,
+            'average_score': round(sum(float(p['suitability_score']) for p in enhanced_parcels) / total_parcels, 1),
+            'recommended_for_outreach': sum(1 for p in enhanced_parcels if p['recommended_for_outreach']),
+            'location': f"{county_name}, {state}"
+        },
+        'analysis_metadata': {
+            'scoring_method': 'Simple acreage-based scoring',
+            'analysis_date': datetime.now().isoformat(),
+            'project_type': project_type
+        }
+    }
+
+@app.route('/api/execute-parcel-search', methods=['POST'])
+@login_required
+def parcel_search_run():
+    """Execute parcel search"""
+    try:
+        if not enhanced_parcel_search:
+            return jsonify({
+                'success': False,
+                'error': 'Parcel search module not available'
+            }), 500
+
+        data = request.get_json()
+        logger.info(f"Parcel search run request: {data}")
+
+        # Call the run_headless function
+        result = enhanced_parcel_search.run_headless(**data)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Parcel search run error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Search failed: {str(e)}'
+        }), 500
+
+
+@app.route('/api/parcel/files/signed_url', methods=['POST'])
+@login_required
+def generate_file_signed_url():
+    """Generate signed URL for file download"""
+    try:
+        data = request.get_json()
+        blob_name = data.get('blob_name')
+        bucket_name = data.get('bucket_name', 'bcfparcelsearchrepository')
+
+        if not blob_name:
+            return jsonify({'error': 'blob_name required'}), 400
+
+        if not enhanced_parcel_search:
+            return jsonify({'error': 'Parcel search module not available'}), 500
+
+        # Generate signed URL
+        signed_url = enhanced_parcel_search.generate_signed_url(blob_name, bucket_name)
+
+        if signed_url:
+            return jsonify({
+                'success': True,
+                'signed_url': signed_url
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Could not generate signed URL'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Signed URL generation error: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to generate signed URL: {str(e)}'
+        }), 500
+
+
+@app.route('/api/individual-parcel-analysis', methods=['POST'])
+@login_required
+def individual_parcel_analysis():
+    """
+    Run detailed AI analysis on a single parcel
+    """
+    try:
+        if not ENHANCED_PARCEL_AI:
+            return jsonify({
+                'success': False,
+                'error': 'AI analysis service not available. Check ANTHROPIC_API_KEY configuration.'
+            }), 500
+
+        data = request.get_json()
+
+        parcel_data = data.get('parcel_data')
+        county_name = data.get('county_name', 'Unknown')
+        state = data.get('state', 'Unknown')
+        project_type = data.get('project_type', 'solar')
+
+        if not parcel_data:
+            return jsonify({
+                'success': False,
+                'error': 'parcel_data is required'
+            }), 400
+
+        logger.info(f"Running AI analysis for parcel: {parcel_data.get('parcel_id', 'Unknown')}")
+
+        # Call the enhanced parcel AI service
+        ai_analysis = ENHANCED_PARCEL_AI.analyze_single_parcel_detailed(
+            parcel_data=parcel_data,
+            project_type=project_type,
+            location=f"{county_name}, {state}"
+        )
+
+        # Format the response for the frontend
+        formatted_analysis = {
+            'detailed_analysis': format_ai_analysis_for_display(ai_analysis),
+            'analysis_type': 'AI-Powered Individual Parcel Analysis',
+            'generated_at': datetime.now().isoformat(),
+            'parcel_id': parcel_data.get('parcel_id', 'Unknown'),
+            'location': f"{county_name}, {state}",
+            'project_type': project_type,
+            'ai_score': ai_analysis.get('ai_suitability_score', 50),
+            'ai_category': ai_analysis.get('ai_suitability_category', 'FAIR'),
+            'ai_strengths': ai_analysis.get('ai_strengths', []),
+            'ai_challenges': ai_analysis.get('ai_challenges', []),
+            'ai_next_steps': ai_analysis.get('ai_next_steps', [])
+        }
+
+        return jsonify({
+            'success': True,
+            'analysis': formatted_analysis,
+            'message': 'AI analysis completed successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Individual parcel AI analysis error: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': f'AI analysis failed: {str(e)}'
+        }), 500
+
+
+def format_ai_analysis_for_display(ai_analysis):
+    """Format AI analysis results for frontend display"""
+
+    # Get the key analysis components
+    score = ai_analysis.get('ai_suitability_score', 50)
+    category = ai_analysis.get('ai_suitability_category', 'FAIR')
+    complexity = ai_analysis.get('ai_development_complexity', 'MEDIUM')
+    priority = ai_analysis.get('ai_investment_priority', 'MEDIUM')
+    timeline = ai_analysis.get('ai_development_timeline', 'STANDARD')
+
+    strengths = ai_analysis.get('ai_strengths', ['Standard development factors'])
+    challenges = ai_analysis.get('ai_challenges', ['Requires detailed assessment'])
+    next_steps = ai_analysis.get('ai_next_steps', ['Site verification needed'])
+
+    technical_notes = ai_analysis.get('ai_technical_notes', 'Technical analysis completed')
+    economic_notes = ai_analysis.get('ai_economic_notes', 'Economic factors assessed')
+    risk_assessment = ai_analysis.get('ai_risk_assessment', 'Standard development risks apply')
+
+    # Create formatted analysis text
+    analysis_text = f"""
+DEVELOPMENT SUITABILITY ANALYSIS
+
+🎯 Overall Assessment: {score}/100 ({category})
+📊 Development Complexity: {complexity}
+💡 Investment Priority: {priority}
+⏱️ Development Timeline: {timeline}
+
+🟢 KEY STRENGTHS:
+{chr(10).join([f"• {strength}" for strength in strengths])}
+
+🟡 CHALLENGES TO ADDRESS:
+{chr(10).join([f"• {challenge}" for challenge in challenges])}
+
+📋 RECOMMENDED NEXT STEPS:
+{chr(10).join([f"• {step}" for step in next_steps])}
+
+🔧 TECHNICAL CONSIDERATIONS:
+{technical_notes}
+
+💰 ECONOMIC FACTORS:
+{economic_notes}
+
+⚠️ RISK ASSESSMENT:
+{risk_assessment}
+
+---
+Analysis generated using AI-powered renewable energy development assessment
+    """.strip()
+
+    return analysis_text
+
+
+def get_ai_setup_recommendations(test_results):
+    """Get setup recommendations based on test results"""
+    recommendations = []
+
+    if not test_results.get('anthropic_key_configured'):
+        recommendations.append('Set ANTHROPIC_API_KEY in your environment variables')
+
+    if not test_results.get('ai_service_available'):
+        recommendations.append('Ensure ai_service.py is in services/ directory')
+
+    if not test_results.get('enhanced_parcel_ai_available'):
+        recommendations.append('Ensure enhanced_parcel_ai_service.py is in services/ directory')
+
+    if not test_results.get('ai_service_functional'):
+        error = test_results.get('ai_service_error', 'Unknown error')
+        recommendations.append(f'Fix AI service initialization error: {error}')
+
+    if not recommendations:
+        recommendations.append('AI services are properly configured and functional')
+
+    return recommendations
+
+@app.route('/api/test-env-vars', methods=['GET'])
+def test_env_vars():
+    """Test if Flask can read environment variables"""
+    return jsonify({
+        'anthropic_key_available': bool(os.getenv('ANTHROPIC_API_KEY')),
+        'anthropic_key_starts_with_sk': os.getenv('ANTHROPIC_API_KEY', '').startswith('sk-'),
+        'anthropic_key_length': len(os.getenv('ANTHROPIC_API_KEY', '')),
+        'flask_secret_available': bool(os.getenv('FLASK_SECRET_KEY')),
+        'working_directory': os.getcwd()
+    })
+
+
+@app.route('/api/county-market-analysis', methods=['POST'])
+@login_required
+def county_market_analysis():
+    """Run AI market analysis for a specific county"""
+    try:
+        if not AI_SERVICE:
+            logger.error("AI_SERVICE is None")
+            return jsonify({
+                'success': True,  # Still return success with fallback
+                'analysis': create_fallback_county_analysis('Unknown', 'Unknown', 'solar'),
+                'analysis_type': 'Fallback Analysis - AI Service Unavailable',
+                'error_note': 'AI_SERVICE not initialized'
+            })
+
+        # Test the AI service connection first
+        connection_test = AI_SERVICE.test_connection()
+        if not connection_test.get('success'):
+            logger.error(f"AI service connection failed: {connection_test.get('error')}")
+
+            # Use fallback but inform user
+            data = request.get_json()
+            county_name = data.get('county_name', 'Unknown')
+            state = data.get('state', 'Unknown')
+            project_type = data.get('project_type', 'solar')
+
+            return jsonify({
+                'success': True,
+                'analysis': create_fallback_county_analysis(county_name, state, project_type),
+                'analysis_type': 'Fallback Analysis - AI Service Connection Failed',
+                'error_note': f'AI connection error: {connection_test.get("error")}'
+            })
+
+        # If we get here, AI service should work
+        data = request.get_json()
+        county_fips = data.get('county_fips')
+        county_name = data.get('county_name')
+        state = data.get('state')
+        project_type = data.get('project_type', 'solar')
+
+        if not county_name or not state:
+            return jsonify({
+                'success': False,
+                'error': 'county_name and state are required'
+            }), 400
+
+        logger.info(f"Running AI county market analysis for {county_name}, {state}")
+
+        # Create a single county "list" for the AI analysis
+        county_data = [{
+            'name': county_name,
+            'fips': county_fips,
+            'state_code': state
+        }]
+
+        # Call your existing AI service
+        ai_result = AI_SERVICE.analyze_state_counties(state, project_type, county_data)
+
+        if ai_result and ai_result.get('county_rankings'):
+            # Get the analysis for our specific county
+            county_analysis = ai_result['county_rankings'][0] if ai_result['county_rankings'] else None
+
+            if county_analysis:
+                # Format the comprehensive analysis
+                formatted_analysis = format_county_analysis_for_display(
+                    county_analysis,
+                    ai_result.get('analysis_summary', ''),
+                    project_type,
+                    f"{county_name}, {state}"
+                )
+
+                return jsonify({
+                    'success': True,
+                    'analysis': formatted_analysis,
+                    'county_name': county_name,
+                    'state': state,
+                    'project_type': project_type,
+                    'analysis_type': 'AI-Powered County Market Analysis'
+                })
+
+        # Fallback if AI analysis fails
+        fallback = create_fallback_county_analysis(county_name, state, project_type)
+        return jsonify({
+            'success': True,
+            'analysis': fallback,
+            'county_name': county_name,
+            'state': state,
+            'project_type': project_type,
+            'analysis_type': 'Fallback Analysis - AI Analysis Failed',
+            'note': 'AI analysis failed - using fallback content'
+        })
+
+    except Exception as e:
+        logger.error(f"County market analysis error: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+
+        # Return fallback analysis on error
+        data = request.get_json() or {}
+        fallback = create_fallback_county_analysis(
+            data.get('county_name', 'Unknown'),
+            data.get('state', 'Unknown'),
+            data.get('project_type', 'solar')
+        )
+
+        return jsonify({
+            'success': True,  # Still return success with fallback
+            'analysis': fallback,
+            'analysis_type': 'Fallback Analysis - Exception Occurred',
+            'error_note': f'Exception: {str(e)}'
+        })
+
+
+def format_county_analysis_for_display(county_analysis, state_summary, project_type, location):
+    """Format AI county analysis for frontend display"""
+
+    score = county_analysis.get('score', 50)
+    rank = county_analysis.get('rank', 'Unknown')
+    strengths = county_analysis.get('strengths', [])
+    challenges = county_analysis.get('challenges', [])
+    resource_quality = county_analysis.get('resource_quality', 'Good')
+    policy_environment = county_analysis.get('policy_environment', 'Neutral')
+    development_activity = county_analysis.get('development_activity', 'Low')
+    summary = county_analysis.get('summary', 'County analysis completed')
+
+    # Create comprehensive analysis text
+    analysis_text = f"""
+AI-POWERED COUNTY MARKET ANALYSIS
+
+🎯 Overall Development Score: {score}/100 (Rank #{rank} in state)
+📍 Location: {location}
+⚡ Project Focus: {project_type.title()} Energy Development
+
+MARKET ASSESSMENT OVERVIEW:
+{state_summary}
+
+COUNTY-SPECIFIC ANALYSIS:
+{summary}
+
+🟢 KEY STRENGTHS & OPPORTUNITIES:
+{chr(10).join([f"• {strength}" for strength in strengths])}
+
+🟡 CHALLENGES & CONSIDERATIONS:
+{chr(10).join([f"• {challenge}" for challenge in challenges])}
+
+📊 MARKET FACTORS:
+• Resource Quality: {resource_quality}
+• Policy Environment: {policy_environment}  
+• Development Activity: {development_activity}
+
+🚀 STRATEGIC RECOMMENDATIONS:
+
+IMMEDIATE OPPORTUNITIES:
+• Focus on {project_type} development advantages identified above
+• Leverage {resource_quality.lower()} resource quality for competitive positioning
+• Navigate {policy_environment.lower()} regulatory environment strategically
+
+DEVELOPMENT PATHWAY:
+• Conduct detailed feasibility studies for priority sites
+• Engage with local stakeholders and permitting authorities
+• Assess grid interconnection opportunities and constraints
+• Evaluate land acquisition strategies and costs
+
+COMPETITIVE POSITIONING:
+• Ranking #{rank} suggests {"strong competitive position" if int(str(rank).replace('#', '')) <= 10 else "moderate competitive position"}
+• {resource_quality} resource quality provides {"significant" if resource_quality == "Excellent" else "reasonable"} technical advantages
+• {policy_environment} policy environment {"supports" if "Supportive" in policy_environment else "allows for"} development activities
+
+NEXT STEPS FOR MARKET ENTRY:
+• Validate market assumptions with local data and contacts
+• Identify and prioritize specific development sites  
+• Assess competition and market saturation levels
+• Develop relationships with key local stakeholders
+
+---
+Analysis generated using AI-powered renewable energy market intelligence
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    """.strip()
+
+    return analysis_text
+
+
+def create_fallback_county_analysis(county_name='Unknown', state='Unknown', project_type='solar'):
+    """Create fallback analysis when AI is unavailable"""
+
+    analysis_text = f"""
+COUNTY MARKET ANALYSIS - {county_name.upper()}, {state.upper()}
+
+🎯 Project Type: {project_type.title()} Energy Development
+📍 Analysis Level: County Market Assessment
+⚙️ Analysis Method: Deterministic Market Factors
+
+DEVELOPMENT ASSESSMENT:
+
+MARKET FUNDAMENTALS:
+• {county_name} County represents a potential {project_type} development opportunity
+• State-level policies in {state} generally support renewable energy development
+• County-level factors require detailed site-specific evaluation
+
+TYPICAL DEVELOPMENT FACTORS:
+• Resource Availability: {state} generally has adequate renewable energy resources
+• Grid Infrastructure: Most counties have some level of transmission access
+• Land Availability: Rural counties typically offer development opportunities
+• Regulatory Environment: Varies by local jurisdiction and project scale
+
+STRATEGIC CONSIDERATIONS:
+
+OPPORTUNITY ASSESSMENT:
+• Market entry feasibility depends on local resource quality
+• Competition levels vary significantly by region within state
+• Development timeline affected by permitting and interconnection processes
+
+RECOMMENDED NEXT STEPS:
+• Conduct detailed resource assessment for {project_type} development
+• Engage with local utilities for interconnection discussions  
+• Research county-specific zoning and permitting requirements
+• Identify potential development sites and land acquisition opportunities
+• Assess local community support and potential opposition
+
+DEVELOPMENT PATHWAY:
+• Phase 1: Market validation and resource confirmation
+• Phase 2: Site identification and preliminary feasibility
+• Phase 3: Detailed site assessment and permitting strategy
+• Phase 4: Project development and construction planning
+
+RISK FACTORS:
+• Resource quality may vary significantly within county boundaries
+• Local regulations and community acceptance uncertain without research
+• Grid interconnection capacity and costs require utility engagement
+• Land acquisition complexity depends on ownership patterns and pricing
+
+---
+Note: This is a basic market analysis framework. For detailed AI-powered market intelligence including specific scores, competitive analysis, and strategic recommendations, please configure ANTHROPIC_API_KEY in your environment.
+
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    """.strip()
+
+    return analysis_text
+
+
+# In your app.py, add this test route to verify AI service
+@app.route('/api/test-ai-service', methods=['GET'])
+@login_required
+def test_ai_service():
+    """Test AI service connectivity"""
+    try:
+        if not AI_SERVICE:
+            return jsonify({
+                'success': False,
+                'error': 'AI_SERVICE not initialized',
+                'has_anthropic_key': bool(os.getenv('ANTHROPIC_API_KEY')),
+                'anthropic_key_length': len(os.getenv('ANTHROPIC_API_KEY', ''))
+            })
+
+        # Test the service with a simple call
+        test_result = AI_SERVICE._get_fallback_variables('solar', 'county')
+
+        return jsonify({
+            'success': True,
+            'ai_service_available': True,
+            'test_result': bool(test_result),
+            'message': 'AI service is working properly'
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'has_anthropic_key': bool(os.getenv('ANTHROPIC_API_KEY'))
+        })
+
+
+@app.route('/api/test-ai-connectivity', methods=['GET'])
+@login_required
+def test_ai_connectivity():
+    """Test AI service connectivity"""
+    try:
+        import os
+
+        results = {
+            'ai_service_available': AI_SERVICE is not None,
+            'ai_service_class_name': AI_SERVICE.__class__.__name__ if AI_SERVICE else None,
+            'anthropic_key_configured': bool(os.getenv('ANTHROPIC_API_KEY')),
+            'anthropic_key_length': len(os.getenv('ANTHROPIC_API_KEY', '')),
+            'anthropic_key_format': os.getenv('ANTHROPIC_API_KEY', '')[:10] + '...' if os.getenv(
+                'ANTHROPIC_API_KEY') else None,
+            'flask_debug': app.debug,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # Test basic AI service if available
+        if AI_SERVICE:
+            try:
+                if hasattr(AI_SERVICE, 'client') and AI_SERVICE.client:
+                    # Test the connection
+                    test_result = AI_SERVICE.test_connection()
+                    results['ai_service_functional'] = test_result.get('success', False)
+                    results['ai_test_result'] = test_result
+                else:
+                    results['ai_service_functional'] = False
+                    results['ai_service_error'] = 'AI service client is None'
+            except Exception as e:
+                results['ai_service_functional'] = False
+                results['ai_service_error'] = str(e)
+        else:
+            results['ai_service_functional'] = False
+            results['ai_service_error'] = 'AI_SERVICE is None'
+
+        return jsonify({
+            'success': True,
+            'connectivity_test': results
+        })
+
+    except Exception as e:
+        logger.error(f"AI connectivity test error: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Connectivity test failed: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))

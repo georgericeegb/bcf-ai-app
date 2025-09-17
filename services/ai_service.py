@@ -4,6 +4,7 @@ import logging
 import anthropic
 import json
 from typing import Dict, List, Any
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,11 @@ except ImportError as e:
 
 class AIAnalysisService:
     def __init__(self, api_key=None):
+        logger.info("Initializing AI Analysis Service...")
+
         try:
             self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+            logger.info(f"API key length: {len(self.api_key) if self.api_key else 0}")
 
             # Initialize cache with error handling
             self.cache = None
@@ -58,15 +62,71 @@ class AIAnalysisService:
                     self.cache = None
 
             if not self.api_key:
-                logger.warning("No Anthropic API key provided")
+                logger.error("No Anthropic API key provided")
                 self.client = None
-            else:
-                # FIXED: Remove any incompatible parameters like 'proxies'
-                client = anthropic.Anthropic(api_key=api_key)
-                logger.info("Anthropic client initialized successfully")
+                raise ValueError("ANTHROPIC_API_KEY is required")
+
+            if not self.api_key.startswith('sk-ant-'):
+                logger.error("Invalid Anthropic API key format")
+                self.client = None
+                raise ValueError("Invalid Anthropic API key format")
+
+            # Initialize the Anthropic client with minimal parameters
+            logger.info("Creating Anthropic client...")
+
+            # FIXED: Create client with only essential parameters
+            self.client = anthropic.Anthropic(
+                api_key=self.api_key
+                # Do not pass any other parameters like proxies, timeout, etc.
+            )
+
+            # Test the client immediately with a simple call
+            logger.info("Testing Anthropic client connection...")
+            test_response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "test"}]
+            )
+
+            logger.info("Anthropic client initialized and tested successfully!")
+
         except Exception as e:
-            logger.error(f"Failed to initialize Anthropic client: {e}")
+            logger.error(f"Failed to initialize AI service: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             self.client = None
+            # Don't re-raise the exception, just set client to None
+            # This allows the app to continue with fallback analysis
+
+    def test_connection(self):
+        """Test the Anthropic client connection"""
+        if not self.client:
+            return {"success": False, "error": "Client not initialized"}
+
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=20,
+                messages=[{"role": "user", "content": "Connection test"}]
+            )
+            return {"success": True, "message": "Client working properly",
+                    "response_length": len(response.content[0].text)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def test_connection(self):
+        """Test the Anthropic client connection"""
+        if not self.client:
+            return {"success": False, "error": "Client not initialized"}
+
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=20,
+                messages=[{"role": "user", "content": "Test connection"}]
+            )
+            return {"success": True, "message": "Client working properly"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def recommend_project_variables(self, project_type: str, analysis_level: str, location: str,
                                     selected_criteria: List[str] = None) -> Dict[str, Any]:
@@ -236,11 +296,9 @@ class AIAnalysisService:
         """
 
         try:
-            logger.info(f"Generating comprehensive county rankings for {state} - {project_type}")
-
             response = self.client.messages.create(
-                model="claude-3-haiku-20240307",  # Use haiku for faster response
-                max_tokens=6000,  # Increased for full county list
+                model="claude-3-haiku-20240307",
+                max_tokens=4000,  # CHANGED: Reduced from 6000 to 4000 (safe limit)
                 messages=[{"role": "user", "content": prompt}]
             )
 
