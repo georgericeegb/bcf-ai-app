@@ -239,74 +239,44 @@ class MultiTransmissionAnalyzer:
                               max_lines_per_parcel: Optional[int]) -> pd.DataFrame:
         """Process a batch of parcels against transmission lines."""
 
-        # Extract parcel data with better geometry handling
-        parcels_data = []
-        for idx, parcel in batch_parcels.iterrows():
-            if parcel.geometry and not parcel.geometry.is_empty:
-                try:
-                    # Simplify complex geometries to avoid BigQuery issues
-                    geom = parcel.geometry
-                    if hasattr(geom, 'simplify'):
-                        geom = geom.simplify(tolerance=0.0001)  # Simplify to ~10m tolerance
+        # Add extensive debugging
+        logger.info(f"🔍 Processing {len(batch_parcels)} parcels for transmission analysis")
+        logger.info(f"📊 Buffer distance: {max_distance_miles} miles")
 
-                    # Get WKT representation
-                    geometry_wkt = geom.wkt
-
-                    # Validate WKT length (BigQuery has limits)
-                    if len(geometry_wkt) > 50000:  # ~50KB limit
-                        logger.warning(f"Parcel {idx} geometry too complex, using envelope")
-                        geometry_wkt = geom.envelope.wkt
-
-                    # Get centroid for fallback distance calculation
-                    centroid = geom.centroid
-
-                    # ADD COORDINATE DEBUGGING
-                    logger.info(f"🗺️ Parcel {idx} coordinates: {centroid.x:.6f}, {centroid.y:.6f}")
-
-                    # Check if coordinates look correct for Blair County, PA
-                    if -79.0 <= centroid.x <= -78.0 and 40.0 <= centroid.y <= 41.0:
-                        logger.info(f"✅ Parcel {idx} coordinates look correct for Blair County, PA")
-                    else:
-                        logger.warning(
-                            f"⚠️ Parcel {idx} coordinates might be wrong: {centroid.x:.6f}, {centroid.y:.6f}")
-
-                    parcels_data.append({
-                        'original_index': idx,
-                        'parcel_id': parcel.get('parcel_id', f'parcel_{idx}'),
-                        'geometry_wkt': geometry_wkt,
-                        'centroid_lat': centroid.y,
-                        'centroid_lon': centroid.x
-                    })
-
-                except Exception as e:
-                    logger.warning(f"Error processing parcel {idx} geometry: {e}")
-                    continue
-
-        if not parcels_data:
-            return pd.DataFrame()
-
-        # Log what we're about to query
-        logger.info(f"🔍 About to query BigQuery with {len(parcels_data)} parcels")
-        logger.info(f"🔍 Buffer distance: {max_distance_miles} miles")
-
-        # Build and execute query
-        query = self._build_optimized_batch_query(parcels_data, max_distance_miles, max_lines_per_parcel)
-
-        # Log query for debugging
-        logger.info(f"🔍 Query preview: {query[:500]}...")
-
+        # Check if transmission table exists and has data
         try:
-            logger.info(f"Executing BigQuery for {len(parcels_data)} parcels...")
-            query_job = self.client.query(query)
-            results_df = query_job.result().to_dataframe()
+            table_check_query = f"""
+            SELECT COUNT(*) as line_count,
+                   ST_X(ST_CENTROID(ST_UNION_AGG(geometry))) as center_lon,
+                   ST_Y(ST_CENTROID(ST_UNION_AGG(geometry))) as center_lat
+            FROM `{self.transmission_table}`
+            WHERE geometry IS NOT NULL
+            """
 
-            logger.info(f"📊 BigQuery returned {len(results_df)} parcel-transmission relationships")
-            return results_df
+            table_result = self.client.query(table_check_query).result()
+            table_row = next(table_result)
+
+            logger.info(f"📡 Transmission table has {table_row.line_count} lines")
+            logger.info(f"📍 Transmission data center: {table_row.center_lon:.4f}, {table_row.center_lat:.4f}")
+
+            if table_row.line_count == 0:
+                logger.error("❌ No transmission lines found in BigQuery table!")
+                return pd.DataFrame()
 
         except Exception as e:
-            logger.error(f"BigQuery batch analysis failed: {str(e)}")
+            logger.error(f"❌ Cannot access transmission table: {e}")
             return pd.DataFrame()
 
+        # Check parcel coordinates
+        sample_parcel = batch_parcels.iloc[0]
+        centroid = sample_parcel.geometry.centroid
+        logger.info(f"🗺️ Sample parcel coordinates: {centroid.x:.6f}, {centroid.y:.6f}")
+
+        # Check if coordinates are in reasonable range for US
+        if not (-130 <= centroid.x <= -60 and 20 <= centroid.y <= 50):
+            logger.error(f"❌ Parcel coordinates look wrong: {centroid.x:.6f}, {centroid.y:.6f}")
+
+        # Rest of your existing code...
 
     def _build_optimized_batch_query(self, parcels_data: List[Dict],
                                      max_distance_miles: float,
@@ -862,6 +832,41 @@ def download_from_gcs(gcs_path):
         logger.error(f"Error downloading from GCS: {str(e)}")
         return None
 
+
+def verify_transmission_table(self):
+    """Verify transmission table exists and has data in the analysis region"""
+    try:
+        # Check table exists
+        table_ref = self.client.get_table(self.transmission_table)
+        logger.info(f"✅ Table exists: {self.transmission_table}")
+        logger.info(f"📊 Table has {table_ref.num_rows:,} rows")
+
+        # Check data coverage for North Carolina (your current analysis area)
+        nc_bounds_query = f"""
+        SELECT COUNT(*) as nc_lines,
+               MIN(ST_X(ST_CENTROID(geometry))) as min_lon,
+               MAX(ST_X(ST_CENTROID(geometry))) as max_lon,
+               MIN(ST_Y(ST_CENTROID(geometry))) as min_lat,
+               MAX(ST_Y(ST_CENTROID(geometry))) as max_lat
+        FROM `{self.transmission_table}`
+        WHERE ST_INTERSECTS(
+            geometry, 
+            ST_GEOGFROMTEXT('POLYGON((-84 33, -75 33, -75 37, -84 37, -84 33))')
+        )
+        """
+
+        result = self.client.query(nc_bounds_query).result()
+        row = next(result)
+
+        logger.info(f"🏛️ North Carolina transmission lines: {row.nc_lines}")
+        logger.info(
+            f"📍 NC data bounds: {row.min_lon:.2f} to {row.max_lon:.2f} (lon), {row.min_lat:.2f} to {row.max_lat:.2f} (lat)")
+
+        return row.nc_lines > 0
+
+    except Exception as e:
+        logger.error(f"❌ Transmission table verification failed: {e}")
+        return False
 
 def verify_analysis_dependencies():
     """

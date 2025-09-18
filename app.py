@@ -160,17 +160,23 @@ verify_environment()
 
 
 class BigQueryCountiesManager:
-    def __init__(self):
+    def __init__(self, api_key=None):
+        import os
+        print("=== INITIALIZING CLEAN AI SERVICE ===")
         try:
-            from google.cloud import bigquery
-            self.client = bigquery.Client()
-            self.dataset_id = "renewable_energy"
-            self.table_id = "state_counties"
-            self.table_ref = f"{self.client.project}.{self.dataset_id}.{self.table_id}"
-            logger.info("BigQuery counties manager initialized")
+            AI_SERVICE = CleanAIService()
+            if AI_SERVICE.client:
+                test_result = AI_SERVICE.test_connection()
+                print(f"AI service test: {test_result}")
+                AI_AVAILABLE = test_result.get('success', False)
+                print(f"✅ AI Available: {AI_AVAILABLE}")
+            else:
+                AI_AVAILABLE = False
+                print("❌ AI service created but no client")
         except Exception as e:
-            logger.warning(f"BigQuery initialization failed: {e}")
-            self.client = None
+            print(f"❌ Clean AI service failed: {e}")
+            AI_SERVICE = None
+            AI_AVAILABLE = False
 
     def get_state_counties(self, state_code: str):
         """Get counties for a state from BigQuery"""
@@ -858,50 +864,180 @@ def analyze_state_counties():
         return jsonify({'success': False, 'error': f'Analysis error: {str(e)}'}), 500
 
 
-# Around line 200+ in your app.py, replace the AI service initialization:
-
-# Initialize AI services with better error handling
 AI_SERVICE = None
 ENHANCED_PARCEL_AI = None
 
+print("=== STARTING CLEAN AI SERVICE INITIALIZATION ===")
+
+
+class WorkingAIService:
+    def __init__(self):
+        import os
+
+        self.api_key = os.getenv('ANTHROPIC_API_KEY')
+        self.client = None
+
+        print(f"API key check: exists={bool(self.api_key)}, length={len(self.api_key) if self.api_key else 0}")
+
+        if not self.api_key or not self.api_key.startswith('sk-ant-'):
+            print("ERROR: Invalid or missing API key")
+            return
+
+        # Clear proxy variables temporarily
+        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+        original_proxies = {}
+        for var in proxy_vars:
+            if var in os.environ:
+                original_proxies[var] = os.environ[var]
+                del os.environ[var]
+
+        try:
+            import anthropic
+            self.client = anthropic.Anthropic(api_key=self.api_key)
+            print("SUCCESS: Anthropic client created")
+
+            # Test immediately
+            test_response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "test"}]
+            )
+            print("SUCCESS: AI connection test passed")
+
+        except Exception as e:
+            print(f"ERROR: AI client creation failed: {e}")
+            self.client = None
+
+        # Restore proxy variables
+        for var, value in original_proxies.items():
+            os.environ[var] = value
+
+    def test_connection(self):
+        if not self.client:
+            return {"success": False, "error": "Client not initialized"}
+
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "test"}]
+            )
+            return {"success": True, "message": "Connection working"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def analyze_state_counties(self, state, project_type, counties):
+        if not self.client:
+            logger.error("No AI client - using fallback")
+            return self._create_fallback(state, project_type, counties)
+
+        try:
+            county_names = [c.get('name', f'County_{i}') for i, c in enumerate(counties)]
+
+            prompt = f"""Analyze {state} counties for {project_type} energy development.
+
+Counties: {', '.join(county_names)}
+
+Return this exact JSON structure:
+{{
+    "analysis_summary": "Market overview for {state} {project_type} development",
+    "county_rankings": [
+        {{
+            "name": "CountyName",
+            "score": 85,
+            "rank": 1,
+            "strengths": ["Good resource", "Strong infrastructure"],
+            "challenges": ["Zoning restrictions"],
+            "resource_quality": "Excellent",
+            "policy_environment": "Supportive", 
+            "development_activity": "High",
+            "summary": "Strong development potential"
+        }}
+    ]
+}}"""
+
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            import json
+            import re
+
+            response_text = response.content[0].text
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+
+            if json_match:
+                analysis_data = json.loads(json_match.group())
+
+                # Add FIPS codes
+                for ranking in analysis_data.get('county_rankings', []):
+                    county_name = ranking.get('name', '')
+                    for county in counties:
+                        if county.get('name', '').lower() in county_name.lower():
+                            ranking['fips'] = county.get('fips', f'{state}999')
+                            break
+
+                print(f"SUCCESS: AI analyzed {len(analysis_data.get('county_rankings', []))} counties")
+                return analysis_data
+
+        except Exception as e:
+            print(f"ERROR: AI analysis failed: {e}")
+
+        return self._create_fallback(state, project_type, counties)
+
+    def _create_fallback(self, state, project_type, counties):
+        print("WARNING: Using fallback analysis")
+
+        analyzed_counties = []
+        for i, county in enumerate(counties):
+            analyzed_counties.append({
+                'name': county.get('name', f'County_{i}'),
+                'fips': county.get('fips', ''),
+                'score': 75 - (i * 2),
+                'rank': i + 1,
+                'strengths': [f'{project_type.title()} potential', 'Infrastructure access'],
+                'challenges': ['Requires detailed analysis'],
+                'resource_quality': 'Good',
+                'policy_environment': 'Supportive',
+                'development_activity': 'Medium',
+                'summary': f'Standard {project_type} development potential'
+            })
+
+        return {
+            'analysis_summary': f'{state} {project_type} development analysis (FALLBACK)',
+            'county_rankings': analyzed_counties
+        }
+
+
+# Initialize the working AI service
 try:
-    from services.ai_service import AIAnalysisService
-
-    logger.info("AI service class imported successfully")
-
-    # Try to create the AI service
-    AI_SERVICE = AIAnalysisService()
-
-    if AI_SERVICE and hasattr(AI_SERVICE, 'client') and AI_SERVICE.client:
-        logger.info("AI service initialized successfully with working client")
-    else:
-        logger.warning("AI service initialized but client is None - will use fallback analysis")
-
-except ImportError as e:
-    logger.error(f"Could not import AI service: {e}")
-    AI_SERVICE = None
+    AI_SERVICE = WorkingAIService()
+    AI_AVAILABLE = AI_SERVICE.client is not None
+    print(f"FINAL RESULT: AI_AVAILABLE = {AI_AVAILABLE}")
 except Exception as e:
-    logger.error(f"Failed to initialize AI service: {e}")
-    logger.error(f"Traceback: {traceback.format_exc()}")
+    print(f"CRITICAL ERROR: {e}")
     AI_SERVICE = None
+    AI_AVAILABLE = False
 
-try:
-    from services.enhanced_parcel_ai_service import EnhancedParcelAIService
-
-    if AI_SERVICE and AI_SERVICE.client:
-        ENHANCED_PARCEL_AI = EnhancedParcelAIService()
-        logger.info("Enhanced parcel AI service initialized successfully")
-    else:
-        logger.info("Skipping enhanced parcel AI - base AI service not available")
-        ENHANCED_PARCEL_AI = None
-except Exception as e:
-    logger.error(f"Failed to initialize enhanced parcel AI service: {e}")
-    ENHANCED_PARCEL_AI = None
+print("=== AI SERVICE INITIALIZATION COMPLETE ===")
 
 # Set availability flag
 AI_AVAILABLE = AI_SERVICE is not None and hasattr(AI_SERVICE, 'client') and AI_SERVICE.client is not None
-logger.info(f"AI services available: {AI_AVAILABLE}")
+print(f"=== AI INITIALIZATION COMPLETE - Available: {AI_AVAILABLE} ===")
+logger.info(f"=== AI INITIALIZATION COMPLETE - Available: {AI_AVAILABLE} ===")
 
+try:
+    from services.enhanced_parcel_ai_service import EnhancedParcelAIService
+    ENHANCED_PARCEL_AI = EnhancedParcelAIService()
+    logger.info("Enhanced Parcel AI Service initialized successfully")
+except ImportError as e:
+    logger.error(f"Failed to import Enhanced Parcel AI Service: {e}")
+    ENHANCED_PARCEL_AI = None
+except Exception as e:
+    logger.error(f"Failed to initialize Enhanced Parcel AI Service: {e}")
+    ENHANCED_PARCEL_AI = None
 
 @app.route('/api/get-existing-files', methods=['POST'])
 def get_existing_files():
@@ -1189,6 +1325,49 @@ def check_county_activity(state):
             'success': False,
             'error': str(e)
         })
+
+
+@app.route('/api/debug-ai-status', methods=['GET'])
+def debug_ai_status():
+    """Debug AI service status in production"""
+    try:
+        import os
+        import traceback
+
+        # Check environment variable
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+
+        debug_info = {
+            'anthropic_key_exists': bool(api_key),
+            'anthropic_key_length': len(api_key) if api_key else 0,
+            'anthropic_key_format_valid': api_key.startswith('sk-ant-') if api_key else False,
+            'anthropic_key_preview': api_key[:10] + '...' if api_key else None,
+            'ai_service_initialized': AI_SERVICE is not None,
+            'ai_client_exists': hasattr(AI_SERVICE,
+                                        'client') and AI_SERVICE.client is not None if AI_SERVICE else False,
+            'environment': os.getenv('GAE_ENV', 'cloud_run'),
+            'working_directory': os.getcwd(),
+        }
+
+        # Test connection if available
+        if AI_SERVICE and hasattr(AI_SERVICE, 'client') and AI_SERVICE.client:
+            try:
+                test_result = AI_SERVICE.test_connection()
+                debug_info['connection_test'] = test_result
+            except Exception as e:
+                debug_info['connection_test'] = {'success': False, 'error': str(e)}
+        elif AI_SERVICE:
+            debug_info['ai_service_error'] = 'AI service exists but client is None'
+        else:
+            debug_info['ai_service_error'] = 'AI_SERVICE is None'
+
+        return jsonify(debug_info)
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/api/debug-gcs')
@@ -1672,6 +1851,240 @@ def analyze_existing_search_file():
             'success': False,
             'error': f'Analysis failed: {str(e)}'
         }), 500
+
+
+@app.route('/api/analyze-existing-file-comprehensive', methods=['POST'])
+def analyze_existing_file_comprehensive():
+    try:
+        data = request.get_json()
+        file_path = data.get('file_path')
+        county_name = data.get('county_name', 'Unknown')
+        state = data.get('state', 'Unknown')
+        project_type = data.get('project_type', 'solar')
+
+        logger.info(f"Starting comprehensive analysis for {file_path}")
+
+        # STEP 1: Run transmission analysis first
+        logger.info("Running transmission analysis...")
+        try:
+            # Import the module and call the correct function
+            from transmission_analysis_bigquery import run_headless as transmission_run_headless
+
+            transmission_result = transmission_run_headless(
+                input_file_path=file_path,
+                buffer_distance_miles=data.get('buffer_distance_miles', 2.0),
+                output_bucket='bcfparcelsearchrepository',
+                project_id='bcfparcelsearchrepository'
+            )
+
+            logger.info(f"Transmission analysis result: {transmission_result['status']}")
+
+            if transmission_result['status'] == 'success':
+                transmission_enhanced_file = transmission_result['output_file_path']
+                logger.info(f"Transmission analysis successful: {transmission_enhanced_file}")
+            else:
+                logger.warning(f"Transmission analysis failed: {transmission_result.get('message', 'Unknown error')}")
+                transmission_enhanced_file = file_path  # Use original file
+
+        except Exception as e:
+            logger.error(f"Transmission analysis failed: {str(e)}")
+            transmission_enhanced_file = file_path  # Use original file
+            transmission_result = {'status': 'error', 'message': str(e)}
+
+        # STEP 2: Run slope analysis on the transmission-enhanced data
+        logger.info("Running slope analysis...")
+        try:
+            # Import the module and call the correct function
+            from bigquery_slope_analysis import run_headless as slope_run_headless
+
+            slope_result = slope_run_headless(
+                input_file_path=transmission_enhanced_file,
+                max_slope_degrees=data.get('max_slope_degrees', 25.0),
+                output_bucket='bcfparcelsearchrepository',
+                project_id='bcfparcelsearchrepository'
+            )
+
+            logger.info(f"Slope analysis result: {slope_result['status']}")
+
+            if slope_result['status'] != 'success':
+                return jsonify({
+                    'status': 'error',
+                    'message': f"Slope analysis failed: {slope_result.get('message', 'Unknown error')}"
+                }), 500
+
+        except Exception as e:
+            logger.error(f"Slope analysis failed: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': f"Slope analysis failed: {str(e)}"
+            }), 500
+
+        # STEP 3: Load the final results and format for frontend
+        logger.info("Processing results for frontend...")
+
+        try:
+            # Load the final result file
+            final_results_gdf = load_analysis_results(slope_result['output_file_path'])
+
+            if final_results_gdf is None or len(final_results_gdf) == 0:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'No results found in output file'
+                }), 500
+
+            # Convert to format expected by frontend
+            analysis_results = format_results_for_frontend(
+                final_results_gdf,
+                county_name,
+                state,
+                transmission_result,
+                slope_result
+            )
+
+            return jsonify({
+                'status': 'success',
+                'analysis_results': analysis_results,
+                'parcel_count': len(final_results_gdf),
+                'transmission_analysis': transmission_result,
+                'slope_analysis': slope_result
+            })
+
+        except Exception as e:
+            logger.error(f"Results processing failed: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': f"Results processing failed: {str(e)}"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Comprehensive analysis failed: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Analysis failed: {str(e)}'
+        }), 500
+
+
+def load_analysis_results(file_path: str):
+    """Load analysis results from GCS file"""
+    try:
+        import geopandas as gpd
+        import tempfile
+        from google.cloud import storage
+
+        # Download file from GCS
+        if file_path.startswith('gs://'):
+            # Parse GCS path
+            path_parts = file_path[5:].split('/', 1)
+            bucket_name = path_parts[0]
+            blob_path = path_parts[1]
+
+            # Download to temp file
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(bucket_name)
+            blob = bucket.blob(blob_path)
+
+            # Create temp file with appropriate extension
+            suffix = '.gpkg' if blob_path.endswith('.gpkg') else '.csv'
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                temp_path = tmp.name
+
+            blob.download_to_filename(temp_path)
+
+            # Load the data
+            if temp_path.endswith('.gpkg'):
+                gdf = gpd.read_file(temp_path)
+            else:
+                # Handle CSV with geometry
+                import pandas as pd
+                from shapely import wkt
+                df = pd.read_csv(temp_path)
+                if 'geometry' in df.columns:
+                    df['geometry'] = df['geometry'].apply(wkt.loads)
+                    gdf = gpd.GeoDataFrame(df, geometry='geometry')
+                else:
+                    gdf = gpd.GeoDataFrame(df)
+
+            # Cleanup temp file
+            import os
+            os.unlink(temp_path)
+
+            return gdf
+        else:
+            return gpd.read_file(file_path)
+
+    except Exception as e:
+        logger.error(f"Failed to load analysis results: {str(e)}")
+        return None
+
+
+def format_results_for_frontend(gdf, county_name: str, state: str,
+                                transmission_result: dict, slope_result: dict):
+    """Format analysis results for frontend display"""
+    try:
+        # Convert GeoDataFrame to list of dictionaries
+        parcels_data = []
+
+        for idx, row in gdf.iterrows():
+            parcel_dict = {}
+
+            # Convert all columns to JSON-serializable format
+            for col in gdf.columns:
+                if col == 'geometry':
+                    continue  # Skip geometry for JSON
+
+                value = row[col]
+
+                # Handle different data types
+                if pd.isna(value) or value is None:
+                    parcel_dict[col] = None
+                elif isinstance(value, (list, tuple)):
+                    parcel_dict[col] = str(value)  # Convert lists to strings
+                elif hasattr(value, 'item'):  # NumPy types
+                    parcel_dict[col] = value.item()
+                else:
+                    parcel_dict[col] = value
+
+            parcels_data.append(parcel_dict)
+
+        # Calculate summary statistics
+        total_parcels = len(parcels_data)
+
+        # Count by suitability category if available
+        excellent = len([p for p in parcels_data if p.get('suitability_category') == 'Excellent'])
+        good = len([p for p in parcels_data if p.get('suitability_category') == 'Good'])
+        fair = len([p for p in parcels_data if p.get('suitability_category') == 'Fair'])
+        poor = len([p for p in parcels_data if p.get('suitability_category') == 'Poor'])
+
+        # Calculate average score if available
+        scores = [p.get('suitability_score') for p in parcels_data if p.get('suitability_score') is not None]
+        avg_score = sum(scores) / len(scores) if scores else 0
+
+        # Count recommended for outreach
+        recommended = len([p for p in parcels_data if p.get('recommended_for_outreach') == True])
+
+        return {
+            'parcels_table': parcels_data,
+            'summary': {
+                'total_parcels': total_parcels,
+                'excellent': excellent,
+                'good': good,
+                'fair': fair,
+                'poor': poor,
+                'average_score': round(avg_score, 1),
+                'recommended_for_outreach': recommended,
+                'location': f"{county_name}, {state}"
+            },
+            'analysis_metadata': {
+                'scoring_method': 'Comprehensive Analysis (Slope + Transmission)',
+                'transmission_status': transmission_result.get('status', 'unknown'),
+                'slope_status': slope_result.get('status', 'unknown'),
+                'generated_at': pd.Timestamp.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to format results: {str(e)}")
+        raise
 
 def analyze_existing_file_with_bigquery_internal(file_path, county_name, state, project_type):
     """Internal function to reuse existing BigQuery analysis logic"""
@@ -2245,6 +2658,32 @@ def test_ai_service():
         })
 
 
+@app.route('/api/test-ai-isolation', methods=['GET'])
+def test_ai_isolation():
+    """Run isolation test for AI service"""
+    try:
+        import subprocess
+        import sys
+
+        # Run the isolation test
+        result = subprocess.run([
+            sys.executable, '/app/test_ai_isolated.py'
+        ], capture_output=True, text=True, timeout=30)
+
+        return jsonify({
+            'returncode': result.returncode,
+            'stdout': result.stdout,
+            'stderr': result.stderr,
+            'success': result.returncode == 0
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/api/test-ai-connectivity', methods=['GET'])
 @login_required
 def test_ai_connectivity():
@@ -2292,6 +2731,844 @@ def test_ai_connectivity():
             'success': False,
             'error': f'Connectivity test failed: {str(e)}'
         }), 500
+
+
+@app.route('/api/debug-dependencies', methods=['GET'])
+def debug_dependencies():
+    """Check for missing dependencies"""
+    dependencies = {}
+
+    try:
+        import anthropic
+        dependencies['anthropic'] = f"✅ {anthropic.__version__}"
+    except ImportError as e:
+        dependencies['anthropic'] = f"❌ {str(e)}"
+
+    try:
+        from services.ai_service import AIAnalysisService
+        dependencies['ai_service'] = "✅ Importable"
+    except ImportError as e:
+        dependencies['ai_service'] = f"❌ {str(e)}"
+
+    try:
+        from services.cache_service import AIResponseCache
+        dependencies['cache_service'] = "✅ Importable"
+    except ImportError as e:
+        dependencies['cache_service'] = f"❌ {str(e)}"
+
+    try:
+        from models.project_config import ProjectConfig
+        dependencies['project_config'] = "✅ Importable"
+    except ImportError as e:
+        dependencies['project_config'] = f"❌ {str(e)}"
+
+    return jsonify({
+        'dependencies': dependencies,
+        'working_directory': os.getcwd(),
+        'python_path': sys.path,
+        'ai_service_status': AI_SERVICE is not None
+    })
+
+
+@app.route('/api/debug-file-structure', methods=['GET'])
+def debug_file_structure():
+    """Check what files exist in the container"""
+    import os
+    import glob
+
+    file_structure = {}
+
+    # Check working directory contents
+    working_dir = os.getcwd()
+    file_structure['working_directory'] = working_dir
+    file_structure['root_files'] = os.listdir(working_dir)
+
+    # Check for services directory
+    services_dir = os.path.join(working_dir, 'services')
+    file_structure['services_exists'] = os.path.exists(services_dir)
+    if os.path.exists(services_dir):
+        file_structure['services_files'] = os.listdir(services_dir)
+
+    # Check for models directory
+    models_dir = os.path.join(working_dir, 'models')
+    file_structure['models_exists'] = os.path.exists(models_dir)
+    if os.path.exists(models_dir):
+        file_structure['models_files'] = os.listdir(models_dir)
+
+    # Check for specific files
+    critical_files = [
+        'services/ai_service.py',
+        'services/cache_service.py',
+        'models/project_config.py',
+        'services/__init__.py',
+        'models/__init__.py'
+    ]
+
+    file_structure['critical_files'] = {}
+    for file_path in critical_files:
+        full_path = os.path.join(working_dir, file_path)
+        file_structure['critical_files'][file_path] = os.path.exists(full_path)
+
+    return jsonify(file_structure)
+
+
+@app.route('/api/create-missing-files', methods=['POST'])
+@login_required
+def create_missing_files():
+    """Temporarily create missing files"""
+    try:
+        import os
+
+        # Create directories
+        os.makedirs('services', exist_ok=True)
+        os.makedirs('models', exist_ok=True)
+
+        # Create __init__.py files
+        with open('services/__init__.py', 'w') as f:
+            f.write('# Services module\n')
+
+        with open('models/__init__.py', 'w') as f:
+            f.write('# Models module\n')
+
+        # Create minimal project_config.py
+        project_config_content = '''
+class ProjectConfig:
+    @staticmethod
+    def get_tier_criteria(analysis_level):
+        return ["Resource Quality", "Market Opportunity", "Technical Feasibility", "Regulatory Environment"]
+
+    @staticmethod  
+    def get_tier_description(analysis_level):
+        descriptions = {
+            'state': 'State-level market entry and opportunity assessment',
+            'county': 'County-level development feasibility analysis', 
+            'site': 'Site-specific technical and commercial evaluation'
+        }
+        return descriptions.get(analysis_level, f"{analysis_level.title()}-level renewable energy analysis")
+'''
+
+        with open('models/project_config.py', 'w') as f:
+            f.write(project_config_content)
+
+        # Create minimal cache_service.py
+        cache_service_content = '''
+import logging
+logger = logging.getLogger(__name__)
+
+class AIResponseCache:
+    def __init__(self):
+        logger.info("Cache service initialized (minimal version)")
+
+    def get_cached_response(self, **kwargs):
+        return None
+
+    def store_response(self, **kwargs):
+        return True
+
+    def get_cache_stats(self):
+        return {"status": "minimal_cache"}
+
+    def clear_location_cache(self, location, analysis_level=None):
+        return 0
+'''
+
+        with open('services/cache_service.py', 'w') as f:
+            f.write(cache_service_content)
+
+        return jsonify({
+            'success': True,
+            'message': 'Missing files created',
+            'files_created': [
+                'services/__init__.py',
+                'models/__init__.py',
+                'models/project_config.py',
+                'services/cache_service.py'
+            ]
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/debug-import-errors', methods=['GET'])
+def debug_import_errors():
+    """Test imports individually to find specific errors"""
+    import sys
+    import traceback
+
+    results = {}
+
+    # Test each import individually
+    test_imports = [
+        ('services', 'import services'),
+        ('models', 'import models'),
+        ('services.ai_service', 'from services.ai_service import AIAnalysisService'),
+        ('services.cache_service', 'from services.cache_service import AIResponseCache'),
+        ('models.project_config', 'from models.project_config import ProjectConfig')
+    ]
+
+    for name, import_statement in test_imports:
+        try:
+            exec(import_statement)
+            results[name] = {'success': True, 'error': None}
+        except Exception as e:
+            results[name] = {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    # Also check if modules are in sys.modules after successful imports
+    modules_in_sys = {}
+    for module_name in ['services', 'models', 'services.ai_service', 'services.cache_service',
+                        'models.project_config']:
+        modules_in_sys[module_name] = module_name in sys.modules
+
+    return jsonify({
+        'import_tests': results,
+        'modules_in_sys': modules_in_sys,
+        'sys_path': sys.path[:5]  # First 5 entries
+    })
+
+
+# Temporary bypass: Create minimal AI service class directly in app.py
+class MinimalAIService:
+    def __init__(self, api_key=None):
+        import os
+        self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+        self.client = None
+
+        if self.api_key and self.api_key.startswith('sk-ant-'):
+            try:
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=self.api_key)
+                print("✅ Minimal AI service created successfully")
+            except Exception as e:
+                print(f"❌ Minimal AI client creation failed: {e}")
+                self.client = None
+        else:
+            print("❌ Invalid or missing API key")
+
+    def test_connection(self):
+        """Test the connection"""
+        if not self.client:
+            return {"success": False, "error": "Client not initialized"}
+
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "test"}]
+            )
+            return {"success": True, "message": "Connection working"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def analyze_state_counties(self, state, project_type, counties):
+        """Fallback analysis"""
+        analyzed_counties = []
+        for i, county in enumerate(counties):
+            analyzed_counties.append({
+                'name': county.get('name', f'County_{i}'),
+                'fips': county.get('fips', ''),
+                'score': 75 - (i * 2),
+                'rank': i + 1,
+                'strengths': [f'{project_type.title()} potential', 'Infrastructure access'],
+                'challenges': ['Requires detailed analysis'],
+                'resource_quality': 'Good',
+                'policy_environment': 'Supportive',
+                'development_activity': 'Medium'
+            })
+
+        return {
+            'analysis_summary': f'{state} {project_type} development analysis',
+            'county_rankings': analyzed_counties
+        }
+
+
+# Replace your current AI_SERVICE initialization with this:
+print("=== ATTEMPTING MINIMAL AI SERVICE ===")
+try:
+    AI_SERVICE = MinimalAIService()
+    if AI_SERVICE.client:
+        test_result = AI_SERVICE.test_connection()
+        print(f"Minimal AI service test: {test_result}")
+        AI_AVAILABLE = test_result.get('success', False)
+    else:
+        AI_AVAILABLE = False
+        print("Minimal AI service created but no client")
+except Exception as e:
+    print(f"Even minimal AI service failed: {e}")
+    AI_SERVICE = None
+    AI_AVAILABLE = False
+
+print(f"AI_AVAILABLE: {AI_AVAILABLE}")
+
+
+@app.route('/api/test-anthropic-direct', methods=['GET'])
+def test_anthropic_direct():
+    """Test Anthropic client creation directly"""
+    try:
+        import os
+        import anthropic
+        import traceback
+
+        print("=== DIRECT ANTHROPIC TEST ===")
+
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        print(f"API key exists: {bool(api_key)}")
+        print(f"API key length: {len(api_key) if api_key else 0}")
+
+        if not api_key:
+            return jsonify({'success': False, 'error': 'No API key'})
+
+        # Create client with minimal parameters
+        print("Creating Anthropic client with only api_key...")
+        client = anthropic.Anthropic(api_key=api_key)
+        print("✅ Direct client creation successful")
+
+        # Test it
+        print("Testing client...")
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "test"}]
+        )
+        print("✅ Direct client test successful")
+
+        return jsonify({
+            'success': True,
+            'message': 'Direct Anthropic client works perfectly',
+            'anthropic_version': anthropic.__version__,
+            'response_text': response.content[0].text
+        })
+
+    except Exception as e:
+        print(f"❌ Direct Anthropic test failed: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        })
+
+@app.route('/api/debug-environment', methods=['GET'])
+def debug_environment():
+    """Check for proxy-related environment variables"""
+    import os
+
+    proxy_vars = {}
+    all_env_vars = dict(os.environ)
+
+    # Check for common proxy environment variables
+    proxy_keys = [
+        'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+        'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy',
+        'GOOGLE_CLOUD_PROJECT', 'GAE_ENV', 'CLOUD_RUN_SERVICE'
+    ]
+
+    for key in proxy_keys:
+        proxy_vars[key] = all_env_vars.get(key, 'Not set')
+
+    # Also check for any environment variable containing 'proxy'
+    proxy_related = {k: v for k, v in all_env_vars.items()
+                     if 'proxy' in k.lower() or 'PROXY' in k}
+
+    return jsonify({
+        'common_proxy_vars': proxy_vars,
+        'all_proxy_related': proxy_related,
+        'total_env_vars': len(all_env_vars),
+        'anthropic_version': '0.28.0'  # from your requirements
+    })
+
+@app.route('/api/test-anthropic-fixed', methods=['GET'])
+def test_anthropic_fixed():
+    """Test Anthropic with explicit proxy handling"""
+    try:
+        import os
+        import anthropic
+
+        # Clear proxy environment variables temporarily
+        original_proxies = {}
+        proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+
+        for key in proxy_keys:
+            if key in os.environ:
+                original_proxies[key] = os.environ[key]
+                del os.environ[key]
+
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+
+        print("Creating Anthropic client with proxy environment cleared...")
+
+        # Create client with only api_key
+        client = anthropic.Anthropic(api_key=api_key)
+
+        print("✅ Fixed client creation successful")
+
+        # Test it
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "test"}]
+        )
+
+        # Restore original proxy settings
+        for key, value in original_proxies.items():
+            os.environ[key] = value
+
+        print("✅ Fixed client test successful")
+
+        return jsonify({
+            'success': True,
+            'message': 'Fixed Anthropic client works!',
+            'anthropic_version': anthropic.__version__,
+            'response_text': response.content[0].text,
+            'cleared_proxies': list(original_proxies.keys())
+        })
+
+    except Exception as e:
+        # Restore proxy settings even on error
+        for key, value in original_proxies.items():
+            os.environ[key] = value
+
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'cleared_proxies': list(original_proxies.keys()) if 'original_proxies' in locals() else []
+        })
+
+
+@app.route('/api/debug-anthropic-version', methods=['GET'])
+def debug_anthropic_version():
+    """Check actual anthropic version in deployment"""
+    try:
+        import anthropic
+        import sys
+        import pkg_resources
+
+        # Get version info
+        version_info = {
+            'anthropic_version': anthropic.__version__,
+            'anthropic_file_location': anthropic.__file__,
+            'python_version': sys.version,
+            'installed_packages': {}
+        }
+
+        # Check installed packages
+        try:
+            for package in ['anthropic', 'requests', 'httpx']:
+                try:
+                    version_info['installed_packages'][package] = pkg_resources.get_distribution(package).version
+                except:
+                    version_info['installed_packages'][package] = 'Not found'
+        except:
+            pass
+
+        return jsonify(version_info)
+
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'message': 'Could not check anthropic version'
+        })
+
+
+@app.route('/api/test-anthropic-bypass', methods=['GET'])
+def test_anthropic_bypass():
+    """Test anthropic with manual client setup"""
+    try:
+        import os
+        import requests
+        import json
+
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'No API key'})
+
+        # Make direct API call instead of using the client
+        headers = {
+            'x-api-key': api_key,
+            'content-type': 'application/json',
+            'anthropic-version': '2023-06-01'
+        }
+
+        data = {
+            'model': 'claude-3-haiku-20240307',
+            'max_tokens': 10,
+            'messages': [{'role': 'user', 'content': 'test'}]
+        }
+
+        response = requests.post(
+            'https://api.anthropic.com/v1/messages',
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            return jsonify({
+                'success': True,
+                'message': 'Direct API call works!',
+                'response_text': result['content'][0]['text']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'API call failed: {response.status_code}',
+                'response': response.text
+            })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+class DirectAnthropicAI:
+    def __init__(self):
+        import os
+        self.api_key = os.getenv('ANTHROPIC_API_KEY')
+        self.base_url = 'https://api.anthropic.com/v1/messages'
+
+    def test_connection(self):
+        """Test with direct API call"""
+        if not self.api_key:
+            return {"success": False, "error": "No API key"}
+
+        try:
+            import requests
+
+            headers = {
+                'x-api-key': self.api_key,
+                'content-type': 'application/json',
+                'anthropic-version': '2023-06-01'
+            }
+
+            data = {
+                'model': 'claude-3-haiku-20240307',
+                'max_tokens': 10,
+                'messages': [{'role': 'user', 'content': 'test'}]
+            }
+
+            response = requests.post(self.base_url, headers=headers, json=data, timeout=30)
+
+            if response.status_code == 200:
+                return {"success": True, "message": "Direct API working"}
+            else:
+                return {"success": False, "error": f"API error: {response.status_code}"}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def analyze_state_counties(self, state, project_type, counties):
+        """AI analysis using direct API calls"""
+        if not self.api_key:
+            return None
+
+        try:
+            import requests
+            import json
+
+            # Create the same prompt as your AI service
+            county_names = [c.get('name', f'County_{i}') for i, c in enumerate(counties)]
+
+            prompt = f"""
+            You are a renewable energy market analyst. Analyze and rank ALL counties in {state} for {project_type} energy development potential.
+
+            Counties to analyze: {', '.join(county_names)}
+
+            For EACH county listed above, provide a score 0-100 and return as JSON:
+            {{
+                "analysis_summary": "Brief overview of {state}'s {project_type} energy landscape",
+                "county_rankings": [
+                    {{
+                        "name": "County Name",
+                        "score": 85,
+                        "rank": 1,
+                        "strengths": ["Strong infrastructure"],
+                        "challenges": ["Limited land"],
+                        "resource_quality": "Excellent",
+                        "policy_environment": "Supportive",
+                        "development_activity": "High"
+                    }}
+                ]
+            }}
+            """
+
+            headers = {
+                'x-api-key': self.api_key,
+                'content-type': 'application/json',
+                'anthropic-version': '2023-06-01'
+            }
+
+            data = {
+                'model': 'claude-3-haiku-20240307',
+                'max_tokens': 4000,
+                'messages': [{'role': 'user', 'content': prompt}]
+            }
+
+            response = requests.post(self.base_url, headers=headers, json=data, timeout=60)
+
+            if response.status_code == 200:
+                result = response.json()
+                response_text = result['content'][0]['text']
+
+                # Parse JSON from response
+                import re
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    analysis_data = json.loads(json_match.group())
+
+                    # Add missing FIPS codes
+                    returned_counties = analysis_data.get('county_rankings', [])
+                    for ranking in returned_counties:
+                        county_name = ranking.get('name', '')
+                        for county in counties:
+                            if county.get('name', '').lower() in county_name.lower():
+                                ranking['fips'] = county.get('fips', f'{state}999')
+                                break
+
+                    return analysis_data
+
+            return None
+
+        except Exception as e:
+            print(f"Direct API analysis error: {e}")
+            return None
+
+
+# Replace your AI service initialization with:
+print("=== CREATING DIRECT API AI SERVICE ===")
+try:
+    AI_SERVICE = DirectAnthropicAI()
+    test_result = AI_SERVICE.test_connection()
+    print(f"Direct API test: {test_result}")
+    AI_AVAILABLE = test_result.get('success', False)
+    print(f"Direct API AI available: {AI_AVAILABLE}")
+except Exception as e:
+    print(f"Direct API AI failed: {e}")
+    AI_SERVICE = None
+    AI_AVAILABLE = False
+
+app.route('/api/debug-api-key', methods=['GET'])
+
+
+def debug_api_key():
+    """Debug API key configuration"""
+    import os
+
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+
+    return jsonify({
+        'api_key_exists': bool(api_key),
+        'api_key_length': len(api_key) if api_key else 0,
+        'api_key_starts_correctly': api_key.startswith('sk-ant-') if api_key else False,
+        'api_key_preview': api_key[:20] + '...' if api_key else None,
+        'environment_vars': {
+            'ANTHROPIC_API_KEY': 'SET' if api_key else 'NOT SET',
+            'HTTP_PROXY': os.getenv('HTTP_PROXY', 'NOT SET'),
+            'HTTPS_PROXY': os.getenv('HTTPS_PROXY', 'NOT SET')
+        }
+    })
+
+
+class CleanAIService:
+    def __init__(self):
+        """Clean AI service initialization"""
+        import os
+
+        self.api_key = os.getenv('ANTHROPIC_API_KEY')
+        self.client = None
+
+        # Clear any proxy variables that might interfere
+        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+        self._original_proxies = {}
+
+        for var in proxy_vars:
+            if var in os.environ:
+                self._original_proxies[var] = os.environ[var]
+                del os.environ[var]
+
+        if self.api_key and self.api_key.startswith('sk-ant-'):
+            try:
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=self.api_key)
+                logger.info("✅ Clean AI service initialized successfully")
+            except Exception as e:
+                logger.error(f"❌ AI client creation failed: {e}")
+                self.client = None
+        else:
+            logger.error("❌ Invalid or missing API key")
+
+        # Restore proxy variables
+        for var, value in self._original_proxies.items():
+            os.environ[var] = value
+
+    def test_connection(self):
+        """Test API connection"""
+        if not self.client:
+            return {"success": False, "error": "Client not initialized"}
+
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "test"}]
+            )
+            return {"success": True, "message": "Connection working"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def analyze_state_counties(self, state, project_type, counties):
+        """AI-powered county analysis"""
+        if not self.client:
+            logger.error("No AI client available - using fallback")
+            return self._create_fallback_analysis(state, project_type, counties)
+
+        try:
+            county_names = [c.get('name', f'County_{i}') for i, c in enumerate(counties)]
+
+            prompt = f"""
+            Analyze and rank ALL counties in {state} for {project_type} energy development potential.
+
+            Counties: {', '.join(county_names)}
+
+            Return JSON with this exact structure:
+            {{
+                "analysis_summary": "Brief {state} {project_type} market overview",
+                "county_rankings": [
+                    {{
+                        "name": "CountyName",
+                        "score": 85,
+                        "rank": 1,
+                        "strengths": ["advantage1", "advantage2"],
+                        "challenges": ["challenge1"],
+                        "resource_quality": "Excellent",
+                        "policy_environment": "Supportive",
+                        "development_activity": "High",
+                        "summary": "Brief explanation"
+                    }}
+                ]
+            }}
+            """
+
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            import json
+            import re
+
+            response_text = response.content[0].text
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+
+            if json_match:
+                analysis_data = json.loads(json_match.group())
+
+                # Add FIPS codes
+                for ranking in analysis_data.get('county_rankings', []):
+                    county_name = ranking.get('name', '')
+                    for county in counties:
+                        if county.get('name', '').lower() in county_name.lower():
+                            ranking['fips'] = county.get('fips', f'{state}999')
+                            break
+
+                logger.info(f"✅ AI analysis completed for {len(analysis_data.get('county_rankings', []))} counties")
+                return analysis_data
+
+        except Exception as e:
+            logger.error(f"❌ AI analysis failed: {e}")
+
+        return self._create_fallback_analysis(state, project_type, counties)
+
+    def _create_fallback_analysis(self, state, project_type, counties):
+        """Fallback when AI fails"""
+        logger.warning("Using fallback analysis")
+
+        analyzed_counties = []
+        for i, county in enumerate(counties):
+            analyzed_counties.append({
+                'name': county.get('name', f'County_{i}'),
+                'fips': county.get('fips', ''),
+                'score': 75 - (i * 2),
+                'rank': i + 1,
+                'strengths': [f'{project_type.title()} potential', 'Infrastructure access'],
+                'challenges': ['Requires detailed analysis'],
+                'resource_quality': 'Good',
+                'policy_environment': 'Supportive',
+                'development_activity': 'Medium',
+                'summary': f'Standard {project_type} development potential'
+            })
+
+        return {
+            'analysis_summary': f'{state} {project_type} development analysis (fallback)',
+            'county_rankings': analyzed_counties
+        }
+
+
+@app.route('/api/debug-api-key', methods=['GET'])
+def debug_api_key():
+    """Debug API key configuration"""
+    import os
+
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+
+    return jsonify({
+        'api_key_exists': bool(api_key),
+        'api_key_length': len(api_key) if api_key else 0,
+        'api_key_starts_correctly': api_key.startswith('sk-ant-') if api_key else False,
+        'api_key_preview': api_key[:20] + '...' if api_key else None,
+        'environment_vars': {
+            'ANTHROPIC_API_KEY': 'SET' if api_key else 'NOT SET',
+            'HTTP_PROXY': os.getenv('HTTP_PROXY', 'NOT SET'),
+            'HTTPS_PROXY': os.getenv('HTTPS_PROXY', 'NOT SET')
+        }
+    })
+
+
+@app.route('/api/debug-analysis-data/<county_name>', methods=['GET'])
+def debug_analysis_data(county_name):
+    """Debug endpoint to check what data is available"""
+    try:
+        from google.cloud import bigquery
+        client = bigquery.Client()
+
+        # Check transmission data
+        tx_query = f"""
+        SELECT COUNT(*) as tx_count,
+               ST_X(ST_CENTROID(ST_UNION_AGG(geometry))) as center_x,
+               ST_Y(ST_CENTROID(ST_UNION_AGG(geometry))) as center_y
+        FROM `{client.project}.transmission_analysis.transmission_lines`
+        """
+
+        tx_result = list(client.query(tx_query).result())[0]
+
+        # Check slope data
+        slope_query = f"""
+        SELECT COUNT(*) as slope_count
+        FROM `{client.project}.spatial_analysis.slope_grid`
+        """
+
+        slope_result = list(client.query(slope_query).result())[0]
+
+        return jsonify({
+            'transmission_lines': tx_result.tx_count,
+            'transmission_center': f"{tx_result.center_x:.4f}, {tx_result.center_y:.4f}",
+            'slope_grid_cells': slope_result.slope_count,
+            'status': 'success'
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'error'})
+
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))

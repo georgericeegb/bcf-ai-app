@@ -2450,6 +2450,125 @@ try {
             }
         }
 
+        getProjectScale() {
+            // Return the current project type or a default
+            return this.currentProjectType || 'solar';
+        }
+
+        async analyzeSearchResults() {
+            console.log('Starting parcel analysis...');
+
+            // Get the search results table data
+            const parcelRows = document.querySelectorAll('table tbody tr');
+            const parcelData = [];
+
+            parcelRows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 4) {
+                    parcelData.push({
+                        owner: cells[0]?.textContent?.trim() || 'Unknown',
+                        acreage: cells[1]?.textContent?.trim() || '0',
+                        parcel_id: cells[2]?.textContent?.trim() || 'Unknown',
+                        address: cells[3]?.textContent?.trim() || 'N/A'
+                    });
+                }
+            });
+
+            if (parcelData.length === 0) {
+                alert('No parcel data found to analyze');
+                return;
+            }
+
+            // Show loading state
+            const analyzeBtn = document.querySelector('[onclick*="analyzeSearchResults"]');
+            if (analyzeBtn) {
+                analyzeBtn.disabled = true;
+                analyzeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
+            }
+
+            try {
+                const response = await fetch('/api/analyze-search-results', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        parcel_data: parcelData,
+                        county_name: this.currentAnalysis?.county || 'Unknown',
+                        state: this.currentState || 'Unknown',
+                        project_type: this.currentProjectType || 'solar',
+                        search_id: Date.now().toString()
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    this.showAnalysisResults(result.analysis_results);
+                    alert(`Analysis completed for ${parcelData.length} parcels!`);
+                } else {
+                    alert(`Analysis failed: ${result.error}`);
+                }
+
+            } catch (error) {
+                console.error('Analysis error:', error);
+                alert(`Analysis failed: ${error.message}`);
+            } finally {
+                // Restore button
+                if (analyzeBtn) {
+                    analyzeBtn.disabled = false;
+                    analyzeBtn.innerHTML = '<i class="fas fa-brain"></i> Analyze with AI';
+                }
+            }
+        }
+
+        downloadParcelFile(blobName, fileType) {
+            console.log(`Downloading ${fileType} file: ${blobName}`);
+
+            try {
+                // Create download link
+                const link = document.createElement('a');
+                link.href = `/api/download-parcel-file?blob_name=${encodeURIComponent(blobName)}&file_type=${fileType}`;
+                link.download = blobName;
+
+                // Trigger download
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                alert(`${fileType.toUpperCase()} download started!`);
+
+            } catch (error) {
+                console.error('Download error:', error);
+                alert(`Download failed: ${error.message}`);
+            }
+        }
+
+        showAnalysisResults(analysisResults) {
+            console.log('Showing analysis results:', analysisResults);
+
+            // Create simple results modal
+            const modalHtml = `
+                <div id="analysisModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                     background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+                    <div style="background: white; padding: 30px; border-radius: 10px; max-width: 800px; max-height: 80vh; overflow-y: auto;">
+                        <h3>Analysis Results</h3>
+                        <div style="margin: 20px 0;">
+                            <p><strong>Total Parcels:</strong> ${analysisResults.summary?.total_parcels || 0}</p>
+                            <p><strong>Average Score:</strong> ${analysisResults.summary?.average_score || 'N/A'}</p>
+                            <p><strong>Recommended for Outreach:</strong> ${analysisResults.summary?.recommended_for_outreach || 0}</p>
+                        </div>
+                        <div style="text-align: right;">
+                            <button onclick="document.getElementById('analysisModal').remove()"
+                                    style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px;">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+
         debugTransmissionData(parcels) {
             console.log('=== TRANSMISSION DATA DEBUG ===');
             if (parcels && parcels.length > 0) {
@@ -4210,42 +4329,39 @@ try {
             try {
                 console.log(`Analyzing existing file: ${fileName}`);
 
-                // Close the existing files modal first
-                const existingModal = bootstrap.Modal.getInstance(document.getElementById('existingFilesModal'));
-                if (existingModal) existingModal.hide();
-
-                // Show detailed loading modal
+                // Show loading modal
                 this.showLoadingModal(`
                     <div class="text-center">
                         <div class="spinner-border text-primary mb-3" role="status"></div>
                         <h5>Analyzing Parcel Data with AI</h5>
-                        <div class="progress mb-3" style="height: 20px;">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated"
-                                 style="width: 100%"></div>
-                        </div>
                         <div class="analysis-steps">
-                            <div class="step active" id="step-slope">
-                                <i class="fas fa-mountain me-2"></i>Running slope analysis...
+                            <div class="step active" id="step-transmission">
+                                <i class="fas fa-bolt me-2"></i>Running transmission analysis...
                             </div>
-                            <div class="step" id="step-transmission">
-                                <i class="fas fa-bolt me-2"></i>Analyzing transmission lines...
+                            <div class="step" id="step-slope">
+                                <i class="fas fa-mountain me-2"></i>Running slope analysis...
                             </div>
                             <div class="step" id="step-scoring">
                                 <i class="fas fa-calculator me-2"></i>Calculating suitability scores...
                             </div>
                         </div>
-                        <small class="text-muted">This may take 2-3 minutes for large files</small>
+                        <small class="text-muted">This may take 2-3 minutes</small>
                     </div>
                 `);
 
-                const response = await fetch('/api/analyze-existing-file-bq', {
+                // FIXED: Ensure we run both analyses in the correct order
+                const response = await fetch('/api/analyze-existing-file-comprehensive', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         file_path: filePath,
                         county_name: countyName,
                         state: this.currentState,
-                        project_type: this.currentProjectType
+                        project_type: this.currentProjectType,
+                        run_transmission_analysis: true,  // Ensure transmission runs
+                        run_slope_analysis: true,         // Ensure slope runs
+                        buffer_distance_miles: 2.0,      // For transmission
+                        max_slope_degrees: 25.0          // For slope
                     })
                 });
 
@@ -4454,7 +4570,9 @@ try {
         }
 
         formatSlope(slope) {
-            if (slope === null || slope === undefined || slope === 'undefined' || slope === 15.0) {
+            console.log('Formatting slope:', slope, typeof slope); // Debug log
+
+            if (slope === null || slope === undefined || slope === 'undefined' || slope === '') {
                 return '<span class="text-muted">Pending</span>';
             }
 
@@ -4483,12 +4601,20 @@ try {
                                      parcel.tx_nearest_distance_miles ||
                                      parcel.tx_nearest_distance ||
                                      parcel.transmission_distance ||
+                                     parcel.tx_distance ||  // Add this fallback
                                      null;
 
                 const txVoltageRaw = parcel.tx_voltage_kv ||
                                     parcel.tx_max_voltage_kv ||
                                     parcel.tx_max_voltage ||
                                     parcel.transmission_voltage ||
+                                    parcel.tx_voltage ||  // Add this fallback
+                                    null;
+
+                const slopeRaw = parcel.slope_degrees ||
+                                    parcel.avg_slope_degrees ||
+                                    parcel.avg_slope ||
+                                    parcel.average_slope ||  // Add this fallback
                                     null;
 
                 // FIXED: Use the formatting functions

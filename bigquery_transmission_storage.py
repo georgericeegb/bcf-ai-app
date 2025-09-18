@@ -171,7 +171,7 @@ class TransmissionAnalysisBQ:
 
                     # Parcel characteristics
                     'acreage': float(self._safe_extract(parcel, ['acreage', 'acres'], 0)),
-                    'slope_degrees': float(self._safe_extract(parcel, ['avg_slope_degrees', 'slope_degrees'], 15)),
+                    'slope_degrees': float(self._safe_extract(parcel, ['avg_slope_degrees', 'slope'], 15)),
                     'latitude': float(lat) if lat else None,
                     'longitude': float(lon) if lon else None,
 
@@ -198,6 +198,7 @@ class TransmissionAnalysisBQ:
                 # Debug the record being stored
                 logger.info(f"Storing record with tx_nearest_distance_miles: {record['tx_nearest_distance_miles']}")
                 logger.info(f"Storing record with tx_max_voltage_kv: {record['tx_max_voltage_kv']}")
+                logger.info(f"Sample parcel data being returned: {parcels[0] if parcels else 'No parcels'}")
 
                 records.append(record)
 
@@ -297,6 +298,7 @@ class TransmissionAnalysisBQ:
                     # CRITICAL: Map to the exact field names the UI expects
                     'tx_distance_miles': tx_distance,
                     'tx_voltage_kv': tx_voltage,
+                    'slope_degrees': result_row['slope_degrees'] if pd.notna(result_row['slope_degrees']) else None,
 
                     'tx_lines_count': int(result_row['tx_lines_count']) if pd.notna(
                         result_row['tx_lines_count']) else 0,

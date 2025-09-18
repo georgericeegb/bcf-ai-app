@@ -686,23 +686,34 @@ def merge_slope_with_original_data(original_gdf: gpd.GeoDataFrame,
     # Keep all original data
     enhanced_gdf = original_gdf.copy()
 
+    # Debug: Log what fields we have before merge
+    logger.info(f"Original GDF columns: {list(enhanced_gdf.columns)}")
+    logger.info(f"Slope results columns: {list(slope_results_gdf.columns) if len(slope_results_gdf) > 0 else []}")
+
     # Log transmission fields before merge
-    tx_fields = [col for col in enhanced_gdf.columns if 'tx_' in col.lower()]
+    tx_fields = [col for col in enhanced_gdf.columns if 'tx_' in col.lower() or 'transmission' in col.lower()]
     logger.info(f"Before merge - transmission fields: {tx_fields}")
-    for field in tx_fields:
-        non_null = enhanced_gdf[field].notna().sum()
-        logger.info(f"  {field}: {non_null} non-null values")
 
-    # Merge slope data by parcel_id
-    if len(slope_results_gdf) > 0:
-        slope_cols = [col for col in slope_results_gdf.columns
-                      if col not in ['geometry', 'parcel_id'] + list(original_gdf.columns)]
+    # Merge slope data by parcel_id if available
+    if len(slope_results_gdf) > 0 and 'parcel_id' in slope_results_gdf.columns:
+        # Only merge new slope columns, preserve everything else
+        slope_only_cols = [col for col in slope_results_gdf.columns
+                           if col.startswith(
+                ('avg_slope', 'min_slope', 'max_slope', 'slope_', 'reference_', 'suitability_'))
+                           and col not in enhanced_gdf.columns]
 
-        enhanced_gdf = enhanced_gdf.merge(
-            slope_results_gdf[['parcel_id'] + slope_cols],
-            on='parcel_id',
-            how='left'
-        )
+        if slope_only_cols:
+            merge_cols = ['parcel_id'] + slope_only_cols
+            enhanced_gdf = enhanced_gdf.merge(
+                slope_results_gdf[merge_cols],
+                on='parcel_id',
+                how='left'
+            )
+            logger.info(f"Merged slope columns: {slope_only_cols}")
+
+    # Debug: Log transmission fields after merge
+    tx_fields_after = [col for col in enhanced_gdf.columns if 'tx_' in col.lower() or 'transmission' in col.lower()]
+    logger.info(f"After merge - transmission fields: {tx_fields_after}")
 
     return enhanced_gdf
 

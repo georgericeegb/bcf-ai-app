@@ -45,73 +45,54 @@ except ImportError as e:
 
 class AIAnalysisService:
     def __init__(self, api_key=None):
-        logger.info("Initializing AI Analysis Service...")
+        print("=== AI SERVICE INIT STARTED ===")
+        logger.info("AI Service initialization started")
 
         try:
+            # Step 1: Set API key
             self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
-            logger.info(f"API key length: {len(self.api_key) if self.api_key else 0}")
+            print(f"Step 1: API key length: {len(self.api_key) if self.api_key else 0}")
+            logger.info(
+                f"API key check: exists={bool(self.api_key)}, length={len(self.api_key) if self.api_key else 0}")
 
-            # Initialize cache with error handling
+            # Step 2: Initialize cache (simplified)
             self.cache = None
-            if CACHE_AVAILABLE:
-                try:
-                    self.cache = AIResponseCache()
-                    logger.info("Cache service initialized")
-                except Exception as e:
-                    logger.warning(f"Cache service failed to initialize: {e}")
-                    self.cache = None
+            print("Step 2: Cache set to None (simplified)")
 
+            # Step 3: Validate API key
             if not self.api_key:
+                print("ERROR: No API key provided")
                 logger.error("No Anthropic API key provided")
                 self.client = None
-                raise ValueError("ANTHROPIC_API_KEY is required")
+                return  # Don't raise exception, just return
 
             if not self.api_key.startswith('sk-ant-'):
+                print(f"ERROR: Invalid API key format: {self.api_key[:10]}...")
                 logger.error("Invalid Anthropic API key format")
                 self.client = None
-                raise ValueError("Invalid Anthropic API key format")
+                return  # Don't raise exception, just return
 
-            # Initialize the Anthropic client with minimal parameters
+            # Step 4: Create client (minimal)
+            print("Step 4: Creating Anthropic client...")
             logger.info("Creating Anthropic client...")
 
-            # FIXED: Create client with only essential parameters
-            self.client = anthropic.Anthropic(
-                api_key=self.api_key
-                # Do not pass any other parameters like proxies, timeout, etc.
-            )
+            import anthropic
+            self.client = anthropic.Anthropic(api_key=self.api_key)
 
-            # Test the client immediately with a simple call
-            logger.info("Testing Anthropic client connection...")
-            test_response = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=10,
-                messages=[{"role": "user", "content": "test"}]
-            )
+            print("Step 5: Anthropic client created successfully")
+            logger.info("Anthropic client created successfully")
 
-            logger.info("Anthropic client initialized and tested successfully!")
+            # Step 6: Simple test (no immediate complex test)
+            print("Step 6: AI Service initialization completed")
+            logger.info("AI Service initialization completed successfully")
 
         except Exception as e:
-            logger.error(f"Failed to initialize AI service: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            print(f"ERROR: AI Service initialization failed: {e}")
+            logger.error(f"AI Service initialization failed: {e}")
+            logger.error(f"Initialization traceback: {traceback.format_exc()}")
             self.client = None
-            # Don't re-raise the exception, just set client to None
-            # This allows the app to continue with fallback analysis
+            # Don't re-raise - let app continue with fallback
 
-    def test_connection(self):
-        """Test the Anthropic client connection"""
-        if not self.client:
-            return {"success": False, "error": "Client not initialized"}
-
-        try:
-            response = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=20,
-                messages=[{"role": "user", "content": "Connection test"}]
-            )
-            return {"success": True, "message": "Client working properly",
-                    "response_length": len(response.content[0].text)}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
 
     def test_connection(self):
         """Test the Anthropic client connection"""
