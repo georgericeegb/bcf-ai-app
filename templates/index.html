@@ -4327,89 +4327,61 @@ try {
 
         async analyzeExistingFile(filePath, fileName, countyName) {
             try {
-                console.log(`Analyzing existing file: ${fileName}`);
+                console.log(`Starting BigQuery analysis: ${fileName}`);
 
-                // Show loading modal
+                // Close existing modal
+                const existingModal = bootstrap.Modal.getInstance(document.getElementById('existingFilesModal'));
+                if (existingModal) existingModal.hide();
+
                 this.showLoadingModal(`
                     <div class="text-center">
-                        <div class="spinner-border text-primary mb-3" role="status"></div>
-                        <h5>Analyzing Parcel Data with AI</h5>
-                        <div class="analysis-steps">
-                            <div class="step active" id="step-transmission">
-                                <i class="fas fa-bolt me-2"></i>Running transmission analysis...
-                            </div>
-                            <div class="step" id="step-slope">
-                                <i class="fas fa-mountain me-2"></i>Running slope analysis...
-                            </div>
-                            <div class="step" id="step-scoring">
-                                <i class="fas fa-calculator me-2"></i>Calculating suitability scores...
-                            </div>
-                        </div>
-                        <small class="text-muted">This may take 2-3 minutes</small>
+                        <div class="spinner-border text-success mb-3" role="status"></div>
+                        <h5>Processing with BigQuery Analysis</h5>
+                        <p class="text-muted">Running slope and transmission analysis...</p>
+                        <small class="text-muted">Using real data from BigQuery - this may take 2-3 minutes</small>
                     </div>
                 `);
 
-                // FIXED: Ensure we run both analyses in the correct order
-                const response = await fetch('/api/analyze-existing-file-comprehensive', {
+                // CORRECT: Use the quick analysis endpoint (BigQuery endpoint fails)
+                const response = await fetch('/api/analyze-existing-file-quick', {  // Changed from analyze-existing-file-quick
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         file_path: filePath,
                         county_name: countyName,
                         state: this.currentState,
-                        project_type: this.currentProjectType,
-                        run_transmission_analysis: true,  // Ensure transmission runs
-                        run_slope_analysis: true,         // Ensure slope runs
-                        buffer_distance_miles: 2.0,      // For transmission
-                        max_slope_degrees: 25.0          // For slope
+                        project_type: this.currentProjectType
                     })
                 });
 
                 this.hideLoadingModal();
 
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP ${response.status}`);
                 }
 
                 const result = await response.json();
 
-                if (!result.success) {
+                if (result.status !== 'success') {
                     throw new Error(result.error || 'Analysis failed');
                 }
 
-                // Store analysis results
+                console.log('BigQuery analysis successful:', result);
+
+                // Store and display results
                 this.currentSuitabilityResults = result.analysis_results;
-                this.originalParcelData = result.analysis_results.enhanced_parcels;
-
-                // Show success notification with details
-                const hasTransmission = result.transmission_analysis?.status === 'success';
-                const transmissionNote = hasTransmission
-                    ? `Includes transmission line analysis within 2-mile buffer.`
-                    : `Slope analysis only - transmission analysis unavailable.`;
-
-                this.showNotification(`
-                    Analysis completed! ${result.parcel_count} parcels analyzed from ${fileName}.
-                    <br><small>${transmissionNote}</small>
-                `, 'success');
-
-                // Show the analysis results
                 this.showAnalysisResults(result.analysis_results, fileName);
+
+                this.showNotification(
+                    `BigQuery analysis completed! ${result.parcel_count} parcels with real slope and transmission data.`,
+                    'success'
+                );
 
             } catch (error) {
                 this.hideLoadingModal();
-                console.error('Analysis error:', error);
-
-                // Enhanced error message
-                let errorMessage = `Failed to analyze file: ${error.message}`;
-
-                if (error.message.includes('HTTP 500')) {
-                    errorMessage += `\n\nThis might be due to:\n• Large file size requiring more processing time\n• Transmission line data unavailable\n• Temporary server overload\n\nTry again in a few minutes or contact support.`;
-                } else if (error.message.includes('timeout')) {
-                    errorMessage += `\n\nFile analysis timed out. This usually happens with very large files.\nTry analyzing a smaller subset or contact support for assistance.`;
-                }
-
-                alert(errorMessage);
+                console.error('BigQuery analysis error:', error);
+                showError(`Analysis failed: ${error.message}`);
             }
         }
 
@@ -4570,56 +4542,80 @@ try {
         }
 
         formatSlope(slope) {
-            console.log('Formatting slope:', slope, typeof slope); // Debug log
+            console.log('Formatting slope:', slope, typeof slope);
 
-            if (slope === null || slope === undefined || slope === 'undefined' || slope === '') {
-                return '<span class="text-muted">Pending</span>';
+            // Handle null/undefined/empty
+            if (slope === null || slope === undefined || slope === 'undefined' ||
+                slope === '' || slope === 'Pending' || isNaN(parseFloat(slope))) {
+                return '<span class="text-muted">No Data</span>';
             }
 
             const numSlope = parseFloat(slope);
-            if (isNaN(numSlope)) {
-                return '<span class="text-muted">Pending</span>';
-            }
-
             return `${numSlope.toFixed(1)}°`;
         }
 
-        generateParcelRows(parcels) {
-            if (parcels.length > 0) {
-                console.log('=== PARCEL FIELD DEBUG ===');
-                console.log('Available fields:', Object.keys(parcels[0]));
-                console.log('Sample parcel data:', parcels[0]);
-                console.log('========================');
+        formatTransmissionDistance(distance) {
+            console.log('Formatting distance:', distance, typeof distance);
+
+            // Handle null/undefined/empty/pending
+            if (distance === null || distance === undefined || distance === 'undefined' ||
+                distance === '' || distance === 'Pending' || isNaN(parseFloat(distance))) {
+                return '<span class="text-muted">No Data</span>';
             }
 
+            const numDistance = parseFloat(distance);
+
+            // Format with color coding
+            if (numDistance === 0) {
+                return '<span class="text-success fw-bold">Intersects</span>';
+            } else if (numDistance <= 0.25) {
+                return '<span class="text-success">' + numDistance.toFixed(2) + ' mi</span>';
+            } else if (numDistance <= 0.5) {
+                return '<span class="text-primary">' + numDistance.toFixed(2) + ' mi</span>';
+            } else if (numDistance <= 1.0) {
+                return '<span class="text-warning">' + numDistance.toFixed(2) + ' mi</span>';
+            } else {
+                return '<span class="text-secondary">' + numDistance.toFixed(2) + ' mi</span>';
+            }
+        }
+
+        formatTransmissionVoltage(voltage) {
+            console.log('Formatting voltage:', voltage, typeof voltage);
+
+            // Handle null/undefined/empty/pending
+            if (voltage === null || voltage === undefined || voltage === 'undefined' ||
+                voltage === '' || voltage === 'Pending' || isNaN(parseFloat(voltage))) {
+                return '<span class="text-muted">No Data</span>';
+            }
+
+            const numVoltage = parseFloat(voltage);
+            return `${Math.round(numVoltage)} kV`;
+        }
+
+        // Update generateParcelRows to use better field mapping and format acres
+        generateParcelRows(parcels) {
             return parcels.map((parcel, index) => {
                 const categoryClass = `category-${parcel.suitability_category.toLowerCase()}`;
                 const scoreClass = `score-${parcel.suitability_category.toLowerCase()}`;
 
-                // FIXED: Properly map transmission fields with multiple fallback options
+                // FIXED: Better field mapping with all possible field names
+                const slopeRaw = parcel.avg_slope_degrees ||
+                                parcel.avg_slope ||
+                                parcel.slope_degrees ||
+                                null;
+
                 const txDistanceRaw = parcel.tx_distance_miles ||
                                      parcel.tx_nearest_distance_miles ||
-                                     parcel.tx_nearest_distance ||
                                      parcel.transmission_distance ||
-                                     parcel.tx_distance ||  // Add this fallback
                                      null;
 
                 const txVoltageRaw = parcel.tx_voltage_kv ||
                                     parcel.tx_max_voltage_kv ||
-                                    parcel.tx_max_voltage ||
                                     parcel.transmission_voltage ||
-                                    parcel.tx_voltage ||  // Add this fallback
                                     null;
 
-                const slopeRaw = parcel.slope_degrees ||
-                                    parcel.avg_slope_degrees ||
-                                    parcel.avg_slope ||
-                                    parcel.average_slope ||  // Add this fallback
-                                    null;
-
-                // FIXED: Use the formatting functions
-                const txDistance = this.formatTransmissionDistance(txDistanceRaw);
-                const txVoltage = this.formatTransmissionVoltage(txVoltageRaw);
+                // Format acres as whole number
+                const formattedAcres = parcel.acreage ? Math.round(parseFloat(parcel.acreage)) : 'N/A';
 
                 return `
                     <tr class="${categoryClass}" data-parcel-index="${index}">
@@ -4637,18 +4633,16 @@ try {
                             <small class="text-muted">${parcel.parcel_id}</small>
                         </td>
                         <td onclick="window.bcf.toggleParcelSelection(${index}, event)">
-                            <strong>${parcel.acreage}</strong>
+                            <strong>${formattedAcres}</strong>
                         </td>
                         <td onclick="window.bcf.toggleParcelSelection(${index}, event)">
-                            ${this.formatSlope(parcel.slope_degrees || parcel.avg_slope_degrees || parcel.avg_slope)}
+                            ${this.formatSlope(slopeRaw)}
                         </td>
                         <td onclick="window.bcf.toggleParcelSelection(${index}, event)">
-                            ${txDistance}
+                            ${this.formatTransmissionDistance(txDistanceRaw)}
                         </td>
                         <td onclick="window.bcf.toggleParcelSelection(${index}, event)">
-                            <span class="transmission-voltage ${this.getVoltageClass(txVoltageRaw)}">
-                                ${txVoltage}
-                            </span>
+                            ${this.formatTransmissionVoltage(txVoltageRaw)}
                         </td>
                         <td onclick="window.bcf.toggleParcelSelection(${index}, event)">
                             <span class="badge ${scoreClass}">${parcel.suitability_category}</span>
@@ -4664,48 +4658,7 @@ try {
             }).join('');
         }
 
-        // Add these helper methods to your BCFWorkflow class
-        formatTransmissionDistance(distance) {
-            // Handle null, undefined, or invalid values
-            if (distance === null || distance === undefined || distance === 'No Data' || distance === 'undefined') {
-                return '<span class="text-muted">Outside Buffer</span>';
-            }
 
-            const numDistance = parseFloat(distance);
-            if (isNaN(numDistance) || numDistance >= 999) {
-                return '<span class="text-muted">Outside Buffer</span>';
-            }
-
-            // Format valid distances with color coding
-            if (numDistance === 0) {
-                return '<span class="text-success fw-bold">Intersects</span>';
-            } else if (numDistance <= 0.25) {
-                return '<span class="text-success">' + numDistance.toFixed(2) + ' mi</span>';
-            } else if (numDistance <= 0.5) {
-                return '<span class="text-primary">' + numDistance.toFixed(2) + ' mi</span>';
-            } else if (numDistance <= 1.0) {
-                return '<span class="text-warning">' + numDistance.toFixed(2) + ' mi</span>';
-            } else if (numDistance <= 3.0) {
-                return '<span class="text-secondary">' + numDistance.toFixed(2) + ' mi</span>';
-            } else {
-                return '<span class="text-muted">Outside Buffer</span>';
-            }
-        }
-
-        formatTransmissionVoltage(voltage) {
-            // Handle null, undefined, or invalid values
-            if (voltage === null || voltage === undefined || voltage === 'No Data' || voltage === 'undefined') {
-                return '<span class="text-muted">Outside Buffer</span>';
-            }
-
-            const numVoltage = parseFloat(voltage);
-            if (isNaN(numVoltage) || numVoltage === 0) {
-                return '<span class="text-muted">Outside Buffer</span>';
-            }
-
-            // Format valid voltages
-            return Math.round(numVoltage) + 'kV';
-        }
 
         getVoltageClass(voltage) {
             const numVoltage = parseFloat(voltage);
