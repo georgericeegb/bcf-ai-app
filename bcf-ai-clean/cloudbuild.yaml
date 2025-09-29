@@ -1,6 +1,7 @@
 steps:
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'bcf-ai-clean'
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/bcf-ai-app:latest', '.']
 
   # Push the container image to Container Registry
