@@ -1,14 +1,10 @@
 steps:
-  # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
-    dir: 'bcf-ai-clean'
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/bcf-ai-app:latest', '.']
-
-  # Push the container image to Container Registry
+  
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/bcf-ai-app:latest']
-
-  # Deploy container image to Cloud Run
+  
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
@@ -29,8 +25,6 @@ steps:
       - '2'
       - '--timeout'
       - '3600'
-      - '--set-env-vars'
-      - 'ANTHROPIC_API_KEY=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,FLASK_SECRET_KEY=Lisboa!2022'
 
 timeout: '1200s'
 options:
