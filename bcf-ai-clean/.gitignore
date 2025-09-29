@@ -1,0 +1,12 @@
+.env
+.env.*
+*.pyc
+__pycache__/
+*.log
+secrets.txt
+*credentials*.json
+*service-account*.json
+*.json
+
+models/*.json
+*.json

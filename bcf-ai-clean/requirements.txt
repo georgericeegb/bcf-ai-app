@@ -1,0 +1,29 @@
+# Core Flask
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# Environment management
+python-dotenv==1.0.0
+
+# AI Services
+anthropic==0.28.0
+requests==2.31.0
+
+# Google Cloud Platform
+google-cloud-bigquery==3.11.4
+google-cloud-storage==2.10.0
+google-auth==2.23.3
+
+# Data processing
+pandas==2.1.1
+geopandas==0.14.0
+shapely==2.0.1
+
+# Utilities
+python-dateutil==2.8.2
+
+# Development/Testing (optional)
+pytest==7.4.2
+pytest-flask==1.2.0
+black==23.7.0
+flake8==6.0.0

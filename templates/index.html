@@ -3725,7 +3725,7 @@ try {
                         'success'
                     );
                 } else {
-                    this.showSearchStatus(`Preview failed: ${result.message}`, 'error');
+                    this.showSearchStatus(`Result: ${result.message}`, 'error');
                 }
 
             } catch (error) {
@@ -4336,14 +4336,15 @@ try {
                 this.showLoadingModal(`
                     <div class="text-center">
                         <div class="spinner-border text-success mb-3" role="status"></div>
-                        <h5>Processing with BigQuery Analysis</h5>
-                        <p class="text-muted">Running slope and transmission analysis...</p>
-                        <small class="text-muted">Using real data from BigQuery - this may take 2-3 minutes</small>
+                        <h5>Processing with Enhanced Analysis</h5>
+                        <p class="text-muted">Analyzing parcel data...</p>
+                        <small class="text-muted">This may take 30-60 seconds</small>
                     </div>
                 `);
 
-                // CORRECT: Use the quick analysis endpoint (BigQuery endpoint fails)
-                const response = await fetch('/api/analyze-existing-file-quick', {  // Changed from analyze-existing-file-quick
+                console.log('Making API call to analyze-existing-file-quick...');
+
+                const response = await fetch('/api/analyze-existing-file-quick', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -4354,34 +4355,51 @@ try {
                     })
                 });
 
+                console.log('Response received:', response.status, response.statusText);
+
                 this.hideLoadingModal();
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || `HTTP ${response.status}`);
+                    // Try to get error details from response
+                    let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.message || errorMessage;
+                        console.error('Server error details:', errorData);
+                    } catch (parseError) {
+                        console.error('Could not parse error response');
+                    }
+                    throw new Error(errorMessage);
                 }
 
                 const result = await response.json();
+                console.log('Analysis result:', result);
 
                 if (result.status !== 'success') {
-                    throw new Error(result.error || 'Analysis failed');
+                    throw new Error(result.message || 'Analysis failed');
                 }
 
-                console.log('BigQuery analysis successful:', result);
+                console.log('Analysis successful:', result);
 
                 // Store and display results
                 this.currentSuitabilityResults = result.analysis_results;
                 this.showAnalysisResults(result.analysis_results, fileName);
 
                 this.showNotification(
-                    `BigQuery analysis completed! ${result.parcel_count} parcels with real slope and transmission data.`,
+                    `Analysis completed! ${result.parcel_count} parcels analyzed.`,
                     'success'
                 );
 
             } catch (error) {
                 this.hideLoadingModal();
-                console.error('BigQuery analysis error:', error);
-                showError(`Analysis failed: ${error.message}`);
+                console.error('Analysis error:', error);
+
+                // Show user-friendly error message
+                const errorMsg = error.message || 'Unknown error occurred';
+                this.showNotification(`Analysis failed: ${errorMsg}`, 'error');
+
+                // Also show in alert for immediate visibility
+                alert(`Analysis failed: ${errorMsg}\n\nCheck the browser console for more details.`);
             }
         }
 

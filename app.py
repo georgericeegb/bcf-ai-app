@@ -491,7 +491,7 @@ def test_simple():
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/analyze-existing-file-bq', methods=['POST'])
+@app.route('/api/analyze-existing-file-quick', methods=['POST'])
 @login_required
 def analyze_existing_file_with_bigquery():
     """Run transmission analysis and store results in BigQuery"""
@@ -1903,7 +1903,7 @@ def delete_search_file():
 @app.route('/api/analyze-search-results', methods=['POST'])
 @login_required
 def analyze_search_results():
-    """Analyze parcel search results with AI (enhanced analysis)"""
+    """Analyze parcel search results with enhanced analysis"""
     try:
         data = request.get_json()
         search_id = data.get('search_id')
@@ -1920,14 +1920,14 @@ def analyze_search_results():
 
         logger.info(f"Analyzing search results: {len(parcel_data)} parcels")
 
-        # For now, create a simple analysis structure
-        # This is where you'd integrate with your existing analysis code
-        analysis_results = create_simple_parcel_analysis(parcel_data, county_name, state, project_type)
+        # Convert parcel data to GeoDataFrame and use enhanced analysis
+        gdf = convert_parcel_data_to_gdf(parcel_data)
+        analysis_results = create_enhanced_parcel_analysis_from_real_data(gdf, county_name, state)
 
         return jsonify({
             'success': True,
             'analysis_results': analysis_results,
-            'message': f'Analysis completed for {len(parcel_data)} parcels'
+            'message': f'Enhanced analysis completed for {len(parcel_data)} parcels'
         })
 
     except Exception as e:
@@ -1966,7 +1966,7 @@ def analyze_existing_search_file():
         # Create a new request context to call your existing function
         from flask import Flask
         with app.test_request_context(
-                '/api/analyze-existing-file-bq',
+                '/api/analyze-existing-file-quick',
                 method='POST',
                 json={
                     'file_path': gcs_path,
@@ -1976,7 +1976,7 @@ def analyze_existing_search_file():
                 }
         ):
             # Call your existing function directly
-            return analyze_existing_file_with_bigquery()
+            return analyze_existing_file_quick()
 
     except Exception as e:
         logger.error(f"Analyze existing search file error: {str(e)}")
@@ -1986,47 +1986,348 @@ def analyze_existing_search_file():
         }), 500
 
 
-@app.route('/api/analyze-existing-file-quick', methods=['POST'])
-def analyze_existing_file_quick():
-    """Quick file analysis without BigQuery - works immediately"""
+@app.route('/api/test-file-load', methods=['GET', 'POST'])
+def test_file_load():
     try:
+        if request.method == 'GET':
+            file_path = 'gs://bcfparcelsearchrepository/NC/Wake/Parcel_Files/Wake_NC_parcels_09162025_1651.csv'
+        else:
+            data = request.get_json()
+            file_path = data.get('file_path',
+                                 'gs://bcfparcelsearchrepository/NC/Wake/Parcel_Files/Wake_NC_parcels_09162025_1651.csv')
+
+        gdf = load_gcs_file_simple(file_path)
+
+        return jsonify({
+            "success": True,
+            "message": f"File loaded successfully with {len(gdf) if gdf is not None else 0} records"
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        })
+
+
+@app.route('/api/debug-analyze-quick', methods=['GET', 'POST'])
+@login_required
+def debug_analyze_quick():
+    """Debug version of analyze-existing-file-quick"""
+    try:
+        # Handle both GET (browser test) and POST (actual request)
+        if request.method == 'GET':
+            return jsonify({
+                'message': 'Debug endpoint is working',
+                'method': 'GET',
+                'instructions': 'Send POST request with file_path, county_name, state to test analysis'
+            })
+
+        # Handle POST request (actual debug)
         data = request.get_json()
+        logger.info(f"Debug request data: {data}")
+
         file_path = data.get('file_path')
         county_name = data.get('county_name', 'Unknown')
         state = data.get('state', 'Unknown')
 
-        logger.info(f"🚀 Quick analysis starting: {file_path}")
-
-        # Load the file directly
-        gdf = load_gcs_file_simple(file_path)
-
-        if gdf is None or len(gdf) == 0:
+        # Check if we have the required data
+        if not file_path:
             return jsonify({
                 'status': 'error',
-                'message': 'Could not load file or file is empty'
+                'message': 'No file_path provided',
+                'debug_data': data
             }), 400
 
-        logger.info(f"📊 Loaded {len(gdf)} parcels from file")
+        logger.info(f"Attempting to load file: {file_path}")
 
-        # Create enhanced analysis results using real data
-        enhanced_results = create_enhanced_parcel_analysis_from_real_data(gdf, county_name, state)
+        # Test GCS connectivity first
+        try:
+            from google.cloud import storage
+            client = storage.Client()
+            logger.info("GCS client created successfully")
 
-        logger.info(f"✅ Analysis complete: {len(enhanced_results['parcels_table'])} parcels processed")
+        except Exception as gcs_error:
+            return jsonify({
+                'status': 'error',
+                'message': f'GCS client creation failed: {str(gcs_error)}',
+                'error_type': 'gcs_auth'
+            }), 500
 
+        # Test file existence
+        try:
+            if file_path.startswith('gs://'):
+                path_parts = file_path[5:].split('/', 1)
+                bucket_name = path_parts[0]
+                blob_path = path_parts[1]
+
+                bucket = client.bucket(bucket_name)
+                blob = bucket.blob(blob_path)
+
+                if not blob.exists():
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'File does not exist: {file_path}',
+                        'error_type': 'file_not_found'
+                    }), 404
+
+                logger.info(f"File exists: {file_path}")
+
+        except Exception as file_error:
+            return jsonify({
+                'status': 'error',
+                'message': f'File check failed: {str(file_error)}',
+                'error_type': 'file_check'
+            }), 500
+
+        # Test file loading
+        try:
+            gdf = load_gcs_file_simple(file_path)
+            if gdf is None:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'File loading returned None',
+                    'error_type': 'file_load_null'
+                }), 500
+
+            logger.info(f"File loaded successfully: {len(gdf)} records")
+
+        except Exception as load_error:
+            return jsonify({
+                'status': 'error',
+                'message': f'File loading failed: {str(load_error)}',
+                'error_type': 'file_load_error'
+            }), 500
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Debug successful - file has {len(gdf)} records',
+            'debug_info': {
+                'file_path': file_path,
+                'record_count': len(gdf),
+                'columns': list(gdf.columns)[:10]  # First 10 columns
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Debug endpoint error: {str(e)}")
+        import traceback
+
+        return jsonify({
+            'status': 'error',
+            'message': f'Debug failed: {str(e)}',
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/system-check', methods=['GET'])
+def system_check():
+    """Quick system health check - no login required"""
+    try:
+        checks = {}
+
+        # Check basic Python imports
+        try:
+            import geopandas as gpd
+            import pandas as pd
+            from shapely import wkt
+            checks['geopandas'] = f"✅ {gpd.__version__}"
+            checks['pandas'] = f"✅ {pd.__version__}"
+            checks['shapely'] = "✅ Available"
+        except ImportError as e:
+            checks['geospatial_libs'] = f"❌ {str(e)}"
+
+        # Check Google Cloud
+        try:
+            from google.cloud import storage
+            client = storage.Client()
+            checks['gcs'] = "✅ Available"
+        except Exception as e:
+            checks['gcs'] = f"❌ {str(e)}"
+
+        # Check if key functions exist
+        try:
+            func_exists = 'load_gcs_file_simple' in globals()
+            checks['load_function'] = "✅ Exists" if func_exists else "❌ Missing"
+        except:
+            checks['load_function'] = "❌ Error checking"
+
+        # Check session
+        checks['logged_in'] = session.get('logged_in', False)
+        checks['username'] = session.get('username', 'Not logged in')
+
+        return jsonify({
+            'status': 'success',
+            'timestamp': datetime.now().isoformat(),
+            'checks': checks
+        })
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/check-dependencies', methods=['GET'])
+def check_dependencies():
+    """Check if required dependencies are available"""
+    deps = {}
+
+    try:
+        import geopandas as gpd
+        deps['geopandas'] = f"✅ {gpd.__version__}"
+    except ImportError as e:
+        deps['geopandas'] = f"❌ {str(e)}"
+
+    try:
+        import pandas as pd
+        deps['pandas'] = f"✅ {pd.__version__}"
+    except ImportError as e:
+        deps['pandas'] = f"❌ {str(e)}"
+
+    try:
+        from shapely import wkt
+        import shapely
+        deps['shapely'] = f"✅ {shapely.__version__}"
+    except ImportError as e:
+        deps['shapely'] = f"❌ {str(e)}"
+
+    try:
+        from google.cloud import storage
+        deps['google_cloud_storage'] = "✅ Available"
+    except ImportError as e:
+        deps['google_cloud_storage'] = f"❌ {str(e)}"
+
+    return jsonify(deps)
+
+
+@app.route('/api/test-functions', methods=['GET'])
+def test_functions():
+    """Test if required functions exist"""
+    functions_check = {}
+
+    # Check if functions exist in global scope
+    functions_check['load_gcs_file_simple'] = 'load_gcs_file_simple' in globals()
+    functions_check[
+        'create_enhanced_parcel_analysis_from_real_data'] = 'create_enhanced_parcel_analysis_from_real_data' in globals()
+
+    # Test basic imports
+    try:
+        import geopandas as gpd
+        import pandas as pd
+        functions_check['geopandas'] = True
+    except ImportError:
+        functions_check['geopandas'] = False
+
+    try:
+        from google.cloud import storage
+        functions_check['google_cloud_storage'] = True
+    except ImportError:
+        functions_check['google_cloud_storage'] = False
+
+    return jsonify(functions_check)
+
+@app.route('/api/analyze-existing-file-quick', methods=['POST'])
+@login_required
+def analyze_existing_file_quick():
+    """Quick file analysis without BigQuery - works immediately"""
+    logger.info("=== STARTING QUICK FILE ANALYSIS ===")
+
+    try:
+        data = request.get_json()
+        logger.info(f"Request data: {data}")
+
+        file_path = data.get('file_path')
+        county_name = data.get('county_name', 'Unknown')
+        state = data.get('state', 'Unknown')
+
+        if not file_path:
+            logger.error("No file_path provided")
+            return jsonify({
+                'status': 'error',
+                'message': 'file_path is required'
+            }), 400
+
+        logger.info(f"Processing file: {file_path}")
+        logger.info(f"County: {county_name}, State: {state}")
+
+        # Step 1: Load the file
+        logger.info("Step 1: Loading file...")
+        try:
+            gdf = load_gcs_file_simple(file_path)
+            if gdf is None:
+                logger.error("load_gcs_file_simple returned None")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Failed to load file - function returned None'
+                }), 500
+
+            if len(gdf) == 0:
+                logger.error("Loaded GDF is empty")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'File loaded but contains no data'
+                }), 500
+
+            logger.info(f"File loaded successfully: {len(gdf)} records")
+            logger.info(f"Columns: {list(gdf.columns)}")
+
+        except Exception as load_error:
+            logger.error(f"File loading error: {str(load_error)}")
+            import traceback
+            logger.error(f"Load traceback: {traceback.format_exc()}")
+            return jsonify({
+                'status': 'error',
+                'message': f'File loading failed: {str(load_error)}'
+            }), 500
+
+        # Step 2: Create analysis
+        logger.info("Step 2: Creating enhanced analysis...")
+        try:
+            enhanced_results = create_enhanced_parcel_analysis_from_real_data(gdf, county_name, state)
+
+            if not enhanced_results:
+                logger.error("create_enhanced_parcel_analysis_from_real_data returned None")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Analysis function returned no results'
+                }), 500
+
+            if 'parcels_table' not in enhanced_results:
+                logger.error(f"Analysis results missing parcels_table. Keys: {enhanced_results.keys()}")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Analysis results are malformed - missing parcels_table'
+                }), 500
+
+            logger.info(f"Analysis completed: {len(enhanced_results['parcels_table'])} parcels")
+
+        except Exception as analysis_error:
+            logger.error(f"Analysis creation error: {str(analysis_error)}")
+            import traceback
+            logger.error(f"Analysis traceback: {traceback.format_exc()}")
+            return jsonify({
+                'status': 'error',
+                'message': f'Analysis creation failed: {str(analysis_error)}'
+            }), 500
+
+        # Step 3: Return results
+        logger.info("Step 3: Returning results...")
         return jsonify({
             'status': 'success',
             'analysis_results': enhanced_results,
             'parcel_count': len(enhanced_results['parcels_table']),
-            'message': f'Analysis completed successfully for {len(enhanced_results["parcels_table"])} parcels'
+            'message': 'Analysis completed successfully'
         })
 
     except Exception as e:
-        logger.error(f"❌ Quick analysis failed: {str(e)}")
+        logger.error(f"Unexpected error in analyze_existing_file_quick: {str(e)}")
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return jsonify({
             'status': 'error',
-            'message': f'Analysis failed: {str(e)}'
+            'message': f'Unexpected server error: {str(e)}'
         }), 500
 
 
@@ -2222,6 +2523,23 @@ def create_enhanced_parcel_analysis_from_real_data(gdf, county_name: str, state:
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise
+
+
+def convert_parcel_data_to_gdf(parcel_data):
+    """Convert parcel data list to GeoDataFrame for enhanced analysis"""
+    import pandas as pd
+    import geopandas as gpd
+
+    if not parcel_data:
+        return gpd.GeoDataFrame()
+
+    # Convert list of dicts to DataFrame
+    df = pd.DataFrame(parcel_data)
+
+    # Create a simple GeoDataFrame (geometry not needed for analysis)
+    gdf = gpd.GeoDataFrame(df)
+
+    return gdf
 
 def calculate_slope_score(slope_degrees):
     """Calculate score based on slope steepness (0-100)"""
@@ -2621,7 +2939,8 @@ def analyze_existing_file_with_bigquery_internal(file_path, county_name, state, 
 
     try:
         # Call your existing function logic directly
-        return analyze_existing_file_with_bigquery()
+        return analyze_existing_file_quick()
+
     except Exception as e:
         logger.error(f"Internal BigQuery analysis error: {str(e)}")
         return jsonify({

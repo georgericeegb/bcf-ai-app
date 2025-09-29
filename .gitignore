@@ -94,3 +94,6 @@ docs/_build/
 *.bak
 *.backup
 EOF
+
+models/*.json
+*.json
