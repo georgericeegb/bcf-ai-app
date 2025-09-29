@@ -4673,6 +4673,9 @@ try {
                         <button class="btn btn-outline-secondary" onclick="window.bcf.backToCountySelection()">
                             <i class="fas fa-arrow-left me-2"></i>Back to Counties
                         </button>
+                        <button class="btn btn-outline-danger" onclick="window.bcf.startOver()">
+                            <i class="fas fa-redo me-2"></i>Start Over
+                        </button>
                     </div>
                 </div>
             `;
@@ -5357,43 +5360,246 @@ try {
             this.updateRowVisualStates();
         }
 
+        startOver() {
+            // Confirm with user
+            const confirmation = confirm(
+                'Start over from the beginning?\n\n' +
+                'This will clear all current analysis data and selections.\n' +
+                'Are you sure you want to continue?'
+            );
+            
+            if (!confirmation) return;
+            
+            console.log('Starting over - resetting application state');
+            
+            // Clear all state
+            this.currentState = null;
+            this.currentProjectType = null;
+            this.currentStateAnalysis = null;
+            this.currentCountyActivity = {};
+            this.currentAnalysis = null;
+            this.currentSuitabilityResults = null;
+            this.selectedParcels = new Set();
+            this.allParcels = [];
+            this.allCounties = [];
+            this.filteredCounties = [];
+            this.currentPage = 1;
+            this.currentCategoryFilter = null;
+            this.aiAnalysisCompleted = false;
+            this.originalParcelData = null;
+            this.enrichedParcelData = null;
+            
+            // Hide all screens
+            const screens = [
+                'county-rankings-screen',
+                'parcel-search-screen',
+                'parcel-analysis-container'
+            ];
+            
+            screens.forEach(screenId => {
+                const screen = document.getElementById(screenId);
+                if (screen) {
+                    screen.style.display = 'none';
+                    if (screenId === 'parcel-analysis-container') {
+                        screen.remove(); // Completely remove analysis container
+                    }
+                }
+            });
+            
+            // Reset the start screen form
+            const stateSelect = document.getElementById('target-state');
+            const projectTypeSelect = document.getElementById('project-type-start');
+            
+            if (stateSelect) stateSelect.value = '';
+            if (projectTypeSelect) projectTypeSelect.value = '';
+            
+            // Show start screen
+            const startScreen = document.getElementById('start-screen');
+            if (startScreen) {
+                startScreen.style.display = 'block';
+            }
+            
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            this.showNotification('Application reset - starting fresh!', 'success');
+            
+            console.log('Application reset complete');
+        }
+
         async initiateOutreach() {
             if (this.selectedParcels.size === 0) {
                 alert('Please select at least one parcel for outreach');
                 return;
             }
 
+            // Get selected parcel data
             const selectedParcelData = Array.from(this.selectedParcels).map(index => this.allParcels[index]);
 
+            // Show confirmation dialog
             const confirmation = confirm(
-                `Initiate outreach for ${this.selectedParcels.size} selected parcels?\n\n` +
-                `This will prepare the parcels for CRM export and outreach management.`
+                `Export ${this.selectedParcels.size} selected parcels to Monday.com CRM?\n\n` +
+                `Location: ${this.currentAnalysis?.location || 'Unknown'}\n` +
+                `Project Type: ${this.currentProjectType || 'Unknown'}\n\n` +
+                `This will create a new group in your Monday.com board with all parcel data.`
             );
 
             if (!confirmation) return;
 
             try {
-                this.showLoadingModal('Preparing parcels for outreach...');
+                this.showLoadingModal('Exporting parcels to Monday.com CRM...');
 
-                // Here you would call your CRM export functionality
-                // For now, show a success message
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate processing
+                const response = await fetch('/api/crm/export-to-crm', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        parcels: selectedParcelData,
+                        project_type: this.currentProjectType || 'solar',
+                        location: this.currentAnalysis?.location || 'Unknown Location'
+                    })
+                });
 
+                const result = await response.json();
                 this.hideLoadingModal();
 
-                this.showNotification(
-                    `Successfully prepared ${this.selectedParcels.size} parcels for outreach! ` +
-                    `Parcels have been added to your CRM for follow-up.`,
-                    'success'
-                );
+                if (result.success) {
+                    // Show detailed success message
+                    const successMessage = `
+                        ✅ Successfully exported to Monday.com CRM!
+                        
+                        📊 Export Summary:
+                        • Total Parcels: ${result.total_parcels}
+                        • Successfully Exported: ${result.successful_exports}
+                        • Failed: ${result.failed_exports}
+                        • Group Name: ${result.group_name}
+                        
+                        🎯 Critical Fields Success Rates:
+                        • Slope Data: ${result.critical_field_rates?.slope_rate || 'N/A'}
+                        • Transmission Distance: ${result.critical_field_rates?.distance_rate || 'N/A'}
+                        • Transmission Voltage: ${result.critical_field_rates?.voltage_rate || 'N/A'}
+                        
+                        The parcels are now available in your Monday.com board for outreach!
+                    `;
+                    
+                    this.showCRMExportSuccessModal(result);
+                    
+                    // Clear selection after successful export
+                    this.clearSelection();
+                    
+                } else {
+                    throw new Error(result.error || 'CRM export failed');
+                }
 
             } catch (error) {
                 this.hideLoadingModal();
-                console.error('Outreach initiation error:', error);
-                alert(`Failed to initiate outreach: ${error.message}`);
+                console.error('CRM export error:', error);
+                
+                const errorMessage = `
+                    ❌ CRM Export Failed
+                    
+                    Error: ${error.message}
+                    
+                    Please check:
+                    • Monday.com API credentials are configured
+                    • MONDAY_API_KEY environment variable is set
+                    • MONDAY_BOARD_ID environment variable is set
+                    • Network connection is stable
+                    
+                    Contact support if the issue persists.
+                `;
+                
+                alert(errorMessage);
             }
         }
 
+        // Add this helper method to show detailed success modal
+        showCRMExportSuccessModal(result) {
+            const modalHtml = `
+                <div class="modal fade" id="crmSuccessModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header bg-success text-white">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    CRM Export Successful
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-success">
+                                    <h6><i class="fas fa-rocket me-2"></i>Parcels Exported to Monday.com</h6>
+                                    <p class="mb-0">Your selected parcels have been successfully added to your CRM for outreach management.</p>
+                                </div>
+                                
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <div class="card text-center">
+                                            <div class="card-body">
+                                                <h3 class="text-success">${result.successful_exports}</h3>
+                                                <p class="mb-0 text-muted">Exported</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card text-center">
+                                            <div class="card-body">
+                                                <h3 class="text-danger">${result.failed_exports}</h3>
+                                                <p class="mb-0 text-muted">Failed</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card text-center">
+                                            <div class="card-body">
+                                                <h3 class="text-primary">${result.total_parcels}</h3>
+                                                <p class="mb-0 text-muted">Total</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <h6>Critical Fields Success Rates:</h6>
+                                <ul>
+                                    <li><strong>Slope Data:</strong> ${result.critical_field_rates?.slope_rate || 'N/A'}</li>
+                                    <li><strong>Transmission Distance:</strong> ${result.critical_field_rates?.distance_rate || 'N/A'}</li>
+                                    <li><strong>Transmission Voltage:</strong> ${result.critical_field_rates?.voltage_rate || 'N/A'}</li>
+                                </ul>
+                                
+                                <div class="alert alert-info">
+                                    <h6><i class="fas fa-info-circle me-2"></i>Monday.com Group Created</h6>
+                                    <p class="mb-1"><strong>Group Name:</strong> ${result.group_name}</p>
+                                    <p class="mb-0"><strong>Group ID:</strong> ${result.group_id}</p>
+                                </div>
+                                
+                                <p class="text-muted mb-0">
+                                    <small>Log in to your Monday.com board to view and manage the exported parcels.</small>
+                                </p>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                <button type="button" class="btn btn-success" onclick="window.open('https://monday.com', '_blank')">
+                                    <i class="fas fa-external-link-alt me-2"></i>Open Monday.com
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal
+            const existingModal = document.getElementById('crmSuccessModal');
+            if (existingModal) existingModal.remove();
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('crmSuccessModal'));
+            modal.show();
+            
+            modal._element.addEventListener('hidden.bs.modal', () => {
+                document.getElementById('crmSuccessModal').remove();
+            });
+        }
 
         exportIndividualReport(parcelId) {
             // Generate a simple report for the individual parcel

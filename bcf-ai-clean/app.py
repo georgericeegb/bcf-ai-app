@@ -1,3 +1,23 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Force load .env file from project root
+project_root = Path(__file__).parent
+env_path = project_root / '.env'
+
+if env_path.exists():
+    load_dotenv(env_path, override=True)
+    print(f"Loaded .env from: {env_path}")
+    # Verify the key was loaded
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    if api_key:
+        print(f"ANTHROPIC_API_KEY loaded: {api_key[:15]}...")
+    else:
+        print("WARNING: ANTHROPIC_API_KEY not found in .env")
+else:
+    print(f"WARNING: .env file not found at {env_path}")
+
 import logging
 import sys
 from datetime import datetime
@@ -11,6 +31,7 @@ from api.auth_routes import auth_bp
 from api.county_routes import county_bp
 from api.parcel_routes import parcel_bp
 from api.analysis_routes import analysis_bp
+from api.crm_routes import crm_bp
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +65,13 @@ def create_app():
         print("✅ analysis_bp registered")
     except Exception as e:
         print(f"❌ analysis_bp failed: {e}")
+
+    try:
+        print("Registering crm_bp...")
+        app.register_blueprint(crm_bp, url_prefix='/api/crm')
+        print("✅ crm_bp registered")
+    except Exception as e:
+        print(f"❌ crm_bp failed: {e}")
     
     # Print all registered routes
     print("\n=== ALL REGISTERED ROUTES ===")
